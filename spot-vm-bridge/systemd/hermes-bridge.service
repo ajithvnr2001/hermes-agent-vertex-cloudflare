@@ -1,0 +1,18 @@
+[Unit]
+Description=Hermes Agent Spot VM Bridge & Cloudflared Tunnel (/data/hermes)
+After=network-online.target local-fs.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/data/hermes
+Environment="HOME=/root"
+Environment="HERMES_HOME=/data/hermes/.hermes"
+Environment="PATH=/data/hermes/.hermes/hermes-agent/venv/bin:/data/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/usr/bin/python3 /data/hermes/vm_bridge.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

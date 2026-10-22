@@ -1,0 +1,11 @@
+node_modules/
+.wrangler/
+.e2e/
+.env
+*.db
+*.db-journal
+*.log
+__pycache__/
+*.pyc
+service-account*.json
+*-credentials.json

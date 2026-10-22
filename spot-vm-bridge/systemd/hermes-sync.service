@@ -1,0 +1,15 @@
+[Unit]
+Description=Hermes Agent Persistent Disk Sync Service (/data/hermes/storage)
+After=network-online.target local-fs.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/data/hermes
+ExecStart=/usr/bin/python3 /data/hermes/sync_to_data.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

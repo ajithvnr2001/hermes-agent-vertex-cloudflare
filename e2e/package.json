@@ -1,0 +1,19 @@
+{
+  "name": "hermes-e2e",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@ai-sdk/google-vertex": "^5.0.119",
+    "@e2e-dev/web": "^0.15.2",
+    "ai": "^7.0.148",
+    "e2e": "^0.21.2",
+    "zod": "^4.6.7"
+  }
+}

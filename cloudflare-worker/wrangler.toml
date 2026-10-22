@@ -1,0 +1,27 @@
+name = "hermes-agent-web"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# Replace with your Cloudflare custom domain (or remove routes to use *.workers.dev)
+routes = [
+  { pattern = "hermes.example.com", custom_domain = true }
+]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "hermes-memory-db"
+database_id = "YOUR_D1_DATABASE_ID"
+
+[[r2_buckets]]
+binding = "STORAGE"
+bucket_name = "hermes-persistent-storage"
+
+[vars]
+VERTEX_PROJECT_ID = "your-gcp-project-id"
+VERTEX_LOCATION = "global"
+AUTH_USERNAME = "admin@example.com"
+
+# Set sensitive secrets via Wrangler CLI (never commit real secrets):
+#   npx wrangler secret put GCP_SA_KEY
+#   npx wrangler secret put AUTH_PASSWORD
+#   npx wrangler secret put BRIDGE_SECRET
