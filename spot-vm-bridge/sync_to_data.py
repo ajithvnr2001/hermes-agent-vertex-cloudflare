@@ -12,6 +12,19 @@ import time
 import urllib.request
 from pathlib import Path
 
+def _load_dotenv(env_path="/data/hermes/.env"):
+    p = Path(env_path)
+    if p.is_file():
+        for line in p.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+
+_load_dotenv(os.environ.get("HERMES_ENV_FILE", "/data/hermes/.env"))
+
 HERMES_ROOT = Path(os.environ.get("HERMES_DATA_DIR", "/data/hermes"))
 STORAGE_DIR = HERMES_ROOT / "storage"
 SESSIONS_DIR = STORAGE_DIR / "sessions"

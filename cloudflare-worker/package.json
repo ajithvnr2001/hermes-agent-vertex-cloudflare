@@ -1,0 +1,16 @@
+{
+  "name": "hermes-agent-cloudflare-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hermes Agent Autonomous Web Workspace on Cloudflare Workers + R2 + D1 + Google Cloud Vertex AI",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute hermes-agent-db --remote --file=schema.sql",
+    "check": "node --check src/index.js && node --check src/tools.js && node --check src/ui.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

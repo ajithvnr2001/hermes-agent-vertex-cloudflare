@@ -21,6 +21,19 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+def _load_dotenv(env_path="/data/hermes/.env"):
+    p = Path(env_path)
+    if p.is_file():
+        for line in p.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+
+_load_dotenv(os.environ.get("HERMES_ENV_FILE", "/data/hermes/.env"))
+
 BRIDGE_PORT = int(os.environ.get("HERMES_BRIDGE_PORT", "9120"))
 BRIDGE_SECRET = os.environ.get("HERMES_BRIDGE_SECRET", "CHANGE_ME_BRIDGE_SECRET")
 WORKER_URL = os.environ.get("HERMES_WORKER_URL", "https://hermes.example.com")

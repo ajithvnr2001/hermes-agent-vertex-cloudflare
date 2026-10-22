@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=/data/hermes
+EnvironmentFile=-/data/hermes/.env
 Environment="HOME=/root"
 Environment="HERMES_HOME=/data/hermes/.hermes"
 Environment="PATH=/data/hermes/.hermes/hermes-agent/venv/bin:/data/bin:/usr/local/bin:/usr/bin:/bin"

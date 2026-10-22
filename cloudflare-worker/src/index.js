@@ -305,12 +305,77 @@ async function fetchWithTimeout(url, options, timeoutMs = 40000) {
   }
 }
 
+let _cachedVertexToken = null;
+let _cachedVertexTokenExp = 0;
+
+function base64UrlEncodeString(str) {
+  return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function base64UrlEncodeBytes(buf) {
+  let binary = "";
+  const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  return base64UrlEncodeString(binary);
+}
+
+async function getVertexBearerToken(saJsonStr) {
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (_cachedVertexToken && nowSec < _cachedVertexTokenExp - 180) {
+    return _cachedVertexToken;
+  }
+  const sa = typeof saJsonStr === "string" ? JSON.parse(saJsonStr) : saJsonStr;
+  const header = base64UrlEncodeString(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const claim = base64UrlEncodeString(
+    JSON.stringify({
+      iss: sa.client_email,
+      scope: "https://www.googleapis.com/auth/cloud-platform",
+      aud: "https://oauth2.googleapis.com/token",
+      iat: nowSec,
+      exp: nowSec + 3600
+    })
+  );
+  const unsigned = `${header}.${claim}`;
+  const pemContents = sa.private_key
+    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
+    .replace(/-----END PRIVATE KEY-----/g, "")
+    .replace(/\s+/g, "");
+  const binDer = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0));
+  const cryptoKey = await crypto.subtle.importKey(
+    "pkcs8",
+    binDer.buffer,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    cryptoKey,
+    new TextEncoder().encode(unsigned)
+  );
+  const assertion = `${unsigned}.${base64UrlEncodeBytes(sig)}`;
+  const tokenResp = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${assertion}`
+  });
+  const tokenData = await tokenResp.json();
+  if (!tokenData.access_token) {
+    throw new Error(`Failed to mint Vertex AI OAuth2 token: ${JSON.stringify(tokenData)}`);
+  }
+  _cachedVertexToken = tokenData.access_token;
+  _cachedVertexTokenExp = nowSec + (tokenData.expires_in || 3600);
+  return _cachedVertexToken;
+}
+
 async function rawVertexGenerate(env, modelInfo, contents, systemPrompt, effectiveThinking, toolDeclarations = [], timeoutMs = 40000) {
   const project = env.VERTEX_PROJECT_ID || env.VERTEX_PROJECT || "your-gcp-project-id";
   const apiKey = env.VERTEX_API_KEY;
+  const bearerToken = !apiKey && env.GCP_SA_KEY ? await getVertexBearerToken(env.GCP_SA_KEY) : null;
   const loc = modelInfo.location || "global";
   const host = loc === "global" ? "aiplatform.googleapis.com" : `${loc}-aiplatform.googleapis.com`;
-  const endpoint = `https://${host}/v1beta1/projects/${project}/locations/${loc}/publishers/google/models/${modelInfo.baseModel}:generateContent?key=${apiKey}`;
+  const authQuery = apiKey ? `?key=${apiKey}` : "";
+  const endpoint = `https://${host}/v1beta1/projects/${project}/locations/${loc}/publishers/google/models/${modelInfo.baseModel}:generateContent${authQuery}`;
 
   const canThink = !modelInfo.baseModel.includes("lite");
 
@@ -352,9 +417,11 @@ async function rawVertexGenerate(env, modelInfo, contents, systemPrompt, effecti
 
   const tryFetch = async (url, payload, tMs) => {
     try {
+      const headers = { "Content-Type": "application/json" };
+      if (bearerToken) headers["Authorization"] = `Bearer ${bearerToken}`;
       return await fetchWithTimeout(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(payload)
       }, tMs);
     } catch (e) {
@@ -378,7 +445,7 @@ async function rawVertexGenerate(env, modelInfo, contents, systemPrompt, effecti
   // Automatic high-speed Vertex AI failover to gemini-2.5-flash / gemini-2.5-pro if preview model times out or errors
   if (!resp.ok) {
     const fallbackModel = modelInfo.baseModel.includes("pro") ? "gemini-2.5-pro" : "gemini-2.5-flash";
-    const fbEndpoint = `https://aiplatform.googleapis.com/v1beta1/projects/${project}/locations/global/publishers/google/models/${fallbackModel}:generateContent?key=${apiKey}`;
+    const fbEndpoint = `https://aiplatform.googleapis.com/v1beta1/projects/${project}/locations/global/publishers/google/models/${fallbackModel}:generateContent${authQuery}`;
     resp = await tryFetch(fbEndpoint, makePayload(true, true), 15000);
     if (!resp.ok) {
       resp = await tryFetch(fbEndpoint, makePayload(false, true), 12000);
@@ -900,17 +967,18 @@ export default {
     }
 
     // 2. Spot VM Bridge Heartbeat Endpoint (Authenticated by Bridge Secret or Owner Password)
-    if (path === "/api/vm/heartbeat" && request.method === "POST") {
+    if ((path === "/api/vm/heartbeat" || path === "/api/bridge/register") && request.method === "POST") {
       const bridgeSecret = request.headers.get("X-Hermes-Bridge-Secret") || "";
+      const expectedBridgeSecret = env.BRIDGE_SECRET || "CHANGE_ME_BRIDGE_SECRET";
       const authed = await isAuthenticated(request, env);
-      if (!authed && bridgeSecret !== "CHANGE_ME_BRIDGE_SECRET") {
+      if (!authed && bridgeSecret !== expectedBridgeSecret) {
         return jsonResponse({ error: "Unauthorized bridge heartbeat" }, 401);
       }
       const body = await request.json();
       const idx = await loadIndex(env);
       idx.vm_bridge = {
         tunnel_url: body.tunnel_url || idx.vm_bridge?.tunnel_url || "",
-        bridge_secret: body.bridge_secret || "CHANGE_ME_BRIDGE_SECRET",
+        bridge_secret: body.bridge_secret || expectedBridgeSecret,
         hostname: body.hostname || "spot-vm",
         data_disk: body.data_disk || {},
         services: body.services || {},
@@ -952,7 +1020,7 @@ export default {
       return jsonResponse({
         ok: true,
         provider: "Google Vertex AI",
-        project: env.VERTEX_PROJECT || "your-gcp-project-id",
+        project: env.VERTEX_PROJECT_ID || env.VERTEX_PROJECT || "your-gcp-project-id",
         default_model: "gemini-3.8-flash",
         thinking_levels: ["auto", "off", "low", "medium", "high", "max"],
         toolsets: TOOLSET_GROUPS,
@@ -978,9 +1046,10 @@ export default {
       }
       const skillsCount = (idx.skills || []).length + Object.keys(idx.custom_skills || {}).length;
       const totalMsgs = (idx.sessions || []).reduce((acc, s) => acc + (s.message_count || 0), 0);
+      const activeProject = env.VERTEX_PROJECT_ID || env.VERTEX_PROJECT || "your-gcp-project-id";
       return jsonResponse({
         ok: true,
-        provider: "Google Vertex AI (your-gcp-project-id)",
+        provider: `Google Vertex AI (${activeProject})`,
         storage_policy: "/data/hermes persistent disk + Cloudflare R2",
         vm_bridge: idx.vm_bridge,
         vm: {

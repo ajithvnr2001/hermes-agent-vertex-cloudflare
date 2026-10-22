@@ -176,11 +176,15 @@ sequenceDiagram
 .
 ├── README.md                        # End-to-End Overview, Progress Report & Quickstart Guide
 ├── .env.example                     # Environment variable template for Spot VM & E2E suite
+├── scripts/
+│   ├── setup-spot-vm.sh             # One-command Spot VM / General VM installer (/data/hermes + systemd + @reboot)
+│   └── deploy-cloudflare.sh         # One-command Cloudflare Worker + R2 + D1 validator & deployer
 ├── cloudflare-worker/               # Cloudflare Edge Worker + D1 + R2 application
+│   ├── package.json                 # Worker npm scripts (deploy, dev, db:init, check)
 │   ├── wrangler.toml                # Wrangler configuration template
 │   ├── schema.sql                   # Cloudflare D1 SQLite schema (7 tables + indexes)
 │   └── src/
-│       ├── index.js                 # Worker API router, Auth, Vertex AI OAuth2 + Thinking, ctx.waitUntil(), /moa, /learn
+│       ├── index.js                 # Worker API router, Auth, Vertex AI (API Key + OAuth2 SA), ctx.waitUntil(), /moa, /learn
 │       ├── tools.js                 # 19 Hermes Tool declarations, executors, 60 skills catalog & slash commands
 │       └── ui.js                    # Responsive 9-Tab Web Workspace UI (Desktop + Mobile)
 ├── spot-vm-bridge/                  # Spot VM / General VM persistent disk services (/data/hermes)
@@ -305,23 +309,34 @@ sequenceDiagram
    ```bash
    npx wrangler d1 execute hermes-memory-db --remote --file=schema.sql
    ```
-5. Upload your encrypted secrets to Cloudflare Worker:
+5. Upload your encrypted secrets to Cloudflare Worker (supports **either** a Vertex AI API Key `VERTEX_API_KEY` **or** a GCP Service Account JSON `GCP_SA_KEY`):
    ```bash
+   # Option A: Using a Google Cloud Vertex AI API Key
+   npx wrangler secret put VERTEX_API_KEY
+
+   # Option B: Using a GCP Service Account JSON key
    npx wrangler secret put GCP_SA_KEY < /tmp/gcp-sa-key.json
    rm -f /tmp/gcp-sa-key.json
+
+   # Owner login password & Spot VM Bridge secret
    npx wrangler secret put AUTH_PASSWORD
    npx wrangler secret put BRIDGE_SECRET
    ```
-6. Deploy the Cloudflare Worker:
+6. Deploy the Cloudflare Worker (or run `../scripts/deploy-cloudflare.sh`):
    ```bash
-   npx wrangler deploy
+   npm run deploy
    ```
 
 ---
 
 ### Step 5: Configure & Enable Spot VM Auto-Healing Systemd Services
 
-1. Set your environment variables in `/data/hermes/hermes-bridge.service` and `/data/hermes/hermes-sync.service` (or via `/data/hermes/.env`):
+You can run the automated one-command setup script from the repository root:
+```bash
+sudo bash scripts/setup-spot-vm.sh
+```
+Or configure manually:
+1. Edit `/data/hermes/.env` (automatically loaded by `hermes-bridge.service`, `hermes-sync.service`, `vm_bridge.py`, and `sync_to_data.py`):
    - `HERMES_WORKER_URL="https://your-hermes-domain.example.com"`
    - `HERMES_AUTH_USER="your-email@example.com"`
    - `HERMES_AUTH_PASSWORD="your-strong-password"`
