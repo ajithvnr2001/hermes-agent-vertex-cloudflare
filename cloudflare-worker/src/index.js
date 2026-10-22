@@ -506,18 +506,96 @@ async function runHermesAgentTurn({
   const systemPrompt = buildSystemInstruction(idx, modelInfo, effectiveThinking, toolsetName);
   const declarations = getDeclarationsForToolset(toolsetName);
 
-  // Build conversation contents from session history (up to last 24 messages)
-  const historyMessages = ephemeral ? [] : (session?.messages || []).slice(-24);
+  // Build conversation contents from session history with Hermes Automatic Context Compaction
+  // Follows Hermes config.yaml compression strategy:
+  // 1. Protect first 2 messages (initial goal & response)
+  // 2. Protect last 20 messages (protect_last_n: 20)
+  // 3. Automatically summarize middle turns when session > 24 messages or > 48k chars
+  const allSessionMsgs = ephemeral ? [] : (session?.messages || []).filter(m => (m.content || "").trim() && m.status !== "running");
+  const totalSessionChars = allSessionMsgs.reduce((acc, m) => acc + (m.content || "").length, 0);
+  const PROTECT_HEAD = 2;
+  const PROTECT_LAST_N = 20;
+  const COMPACT_TRIGGER_MSGS = 24;
+  const COMPACT_TRIGGER_CHARS = 48000;
+
   const contents = [];
 
-  for (const m of historyMessages) {
-    const role = m.role === "assistant" ? "model" : "user";
-    const textContent = (m.content || "").trim();
-    if (!textContent) continue;
-    contents.push({
-      role,
-      parts: [{ text: textContent }]
-    });
+  if (!ephemeral && session && (allSessionMsgs.length > COMPACT_TRIGGER_MSGS || totalSessionChars > COMPACT_TRIGGER_CHARS) && allSessionMsgs.length > (PROTECT_HEAD + PROTECT_LAST_N)) {
+    const cutIndex = allSessionMsgs.length - PROTECT_LAST_N;
+    const prevCompactedUpTo = session.auto_compaction?.compacted_up_to || PROTECT_HEAD;
+
+    if (!session.auto_compaction?.summary || (cutIndex - prevCompactedUpTo) >= 4) {
+      try {
+        const newlyAgedMsgs = allSessionMsgs.slice(prevCompactedUpTo, cutIndex);
+        const transcriptChunk = newlyAgedMsgs
+          .map(m => `${(m.role || "user").toUpperCase()}: ${(m.content || "").slice(0, 3000)}`)
+          .join("\n\n")
+          .slice(0, 24000);
+        const priorSummaryBlock = session.auto_compaction?.summary
+          ? `Prior Compacted Summary:\n${session.auto_compaction.summary}\n\nNewly Aged Conversation Turns:\n${transcriptChunk}`
+          : transcriptChunk;
+
+        const sumModel = MODELS.find(m => m.id === "gemini-3.8-flash") || MODELS[1];
+        const sumData = await rawVertexGenerate(
+          env,
+          sumModel,
+          [{ role: "user", parts: [{ text: `Summarize and merge the key technical decisions, facts, file paths, commands run, and open tasks from these conversation turns into a dense context handoff:\n\n${priorSummaryBlock}` }] }],
+          "You are Hermes Automatic Context Compressor. Produce a dense, accurate markdown summary preserving all technical details, file paths, and state.",
+          "off",
+          []
+        );
+        const summaryText = extractPartsFromResponse(sumData).replyText;
+        if (summaryText) {
+          session.auto_compaction = {
+            summary: summaryText,
+            compacted_up_to: cutIndex,
+            compacted_messages_count: cutIndex - PROTECT_HEAD,
+            updated_at: new Date().toISOString()
+          };
+        }
+      } catch (compErr) {
+        // Fallback silently if background compaction call fails
+      }
+    }
+
+    const headMsgs = allSessionMsgs.slice(0, PROTECT_HEAD);
+    for (const m of headMsgs) {
+      contents.push({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: (m.content || "").trim() }]
+      });
+    }
+
+    if (session.auto_compaction?.summary) {
+      contents.push({
+        role: "user",
+        parts: [{ text: `[Hermes Automatic Context Compaction — Summary of ${session.auto_compaction.compacted_messages_count || (cutIndex - PROTECT_HEAD)} earlier middle turns]\n${session.auto_compaction.summary}` }]
+      });
+      contents.push({
+        role: "model",
+        parts: [{ text: "Understood. I have retained the compacted context summary from the earlier turns." }]
+      });
+    }
+
+    const remainingStart = session.auto_compaction?.compacted_up_to || cutIndex;
+    const tailMsgs = allSessionMsgs.slice(remainingStart);
+    for (const m of tailMsgs) {
+      contents.push({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: (m.content || "").trim() }]
+      });
+    }
+  } else {
+    const historyMessages = allSessionMsgs.slice(-COMPACT_TRIGGER_MSGS);
+    for (const m of historyMessages) {
+      const role = m.role === "assistant" ? "model" : "user";
+      const textContent = (m.content || "").trim();
+      if (!textContent) continue;
+      contents.push({
+        role,
+        parts: [{ text: textContent }]
+      });
+    }
   }
 
   // Current user message parts (supports text + optional skill context + optional multimodal image)
@@ -743,7 +821,7 @@ ${(cliDoctor.stdout || cliDoctor.stderr || "Bridge CLI check completed.").slice(
     };
   }
 
-  if (cmd === "/compress") {
+  if (cmd === "/compress" || cmd === "/compact") {
     if ((session.messages || []).length < 4) {
       return {
         reply: "ℹ️ Session has fewer than 4 messages; context compression is not needed yet.",
