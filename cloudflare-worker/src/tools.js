@@ -384,7 +384,7 @@ export async function callVmBridge(idx, path, method = "POST", body = null, time
       method,
       headers: {
         "Content-Type": "application/json",
-        "X-Hermes-Bridge-Secret": bridge.bridge_secret || "YOUR_BRIDGE_SECRET",
+        "X-Hermes-Bridge-Secret": bridge.bridge_secret || "CHANGE_ME_BRIDGE_SECRET",
         "User-Agent": "HermesCloudflareWorker/2.0"
       },
       signal: ctrl.signal
@@ -450,7 +450,7 @@ export async function performWebExtract(targetUrl) {
   try {
     const resp = await fetch(targetUrl, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; HermesAgent/2.0; +https://your-hermes-domain.example.com)"
+        "User-Agent": "Mozilla/5.0 (compatible; HermesAgent/2.0; +https://hermes.yourdomain.com)"
       }
     });
     const contentType = resp.headers.get("content-type") || "";

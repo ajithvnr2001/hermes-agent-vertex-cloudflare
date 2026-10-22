@@ -88,7 +88,7 @@ function parseCookies(cookieHeader) {
 
 async function isAuthenticated(request, env) {
   const expectedUser = env.AUTH_USERNAME || "admin@example.com";
-  const expectedPass = env.AUTH_PASSWORD || "YOUR_STRONG_PASSWORD";
+  const expectedPass = env.AUTH_PASSWORD || "CHANGE_ME_STRONG_PASSWORD";
   const validToken = await makeAuthToken(expectedUser, expectedPass);
 
   const authHeader = request.headers.get("Authorization") || "";
@@ -773,7 +773,7 @@ ${modelLines}`,
     const cliDoctor = await callVmBridge(idx, "/hermes_cli", "POST", { args: "doctor" }, 20000);
     return {
       reply: `### 🩺 Hermes Doctor — End-to-End Diagnostics
-- **Cloudflare Worker Edge**: ✅ ONLINE (\`your-hermes-domain.example.com\`)
+- **Cloudflare Worker Edge**: ✅ ONLINE (\`hermes.yourdomain.com\`)
 - **Cloudflare R2 Bucket (\`hermes-agent-storage\`)**: ✅ CONNECTED
 - **Google Vertex AI (\`YOUR_GCP_PROJECT_ID\`)**: ✅ ACTIVE (21 Gemini Models + Thinking Budgets)
 - **Spot VM Bridge (\`/data/hermes\`)**: ${vmHealth.ok ? `✅ ONLINE (${idx.vm_bridge?.tunnel_url})` : `⚠️ Bridge status: ${vmHealth.error || "Syncing"}`}
@@ -1004,7 +1004,7 @@ export default {
       try {
         const body = await request.json();
         const expectedUser = env.AUTH_USERNAME || "admin@example.com";
-        const expectedPass = env.AUTH_PASSWORD || "YOUR_STRONG_PASSWORD";
+        const expectedPass = env.AUTH_PASSWORD || "CHANGE_ME_STRONG_PASSWORD";
         if (body.username === expectedUser && body.password === expectedPass) {
           const token = await makeAuthToken(expectedUser, expectedPass);
           const cookie = `hermes_auth=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`;
@@ -1034,7 +1034,7 @@ export default {
     if (path === "/api/internal/execute-job" && request.method === "POST") {
       const bridgeSecret = request.headers.get("X-Hermes-Bridge-Secret") || "";
       const authed = await isAuthenticated(request, env);
-      if (!authed && bridgeSecret !== "YOUR_BRIDGE_SECRET") {
+      if (!authed && bridgeSecret !== "CHANGE_ME_BRIDGE_SECRET") {
         return jsonResponse({ error: "Unauthorized internal job execution" }, 401);
       }
       try {
@@ -1162,14 +1162,14 @@ export default {
     if (path === "/api/vm/heartbeat" && request.method === "POST") {
       const bridgeSecret = request.headers.get("X-Hermes-Bridge-Secret") || "";
       const authed = await isAuthenticated(request, env);
-      if (!authed && bridgeSecret !== "YOUR_BRIDGE_SECRET") {
+      if (!authed && bridgeSecret !== "CHANGE_ME_BRIDGE_SECRET") {
         return jsonResponse({ error: "Unauthorized bridge heartbeat" }, 401);
       }
       const body = await request.json();
       const idx = await loadIndex(env);
       idx.vm_bridge = {
         tunnel_url: body.tunnel_url || idx.vm_bridge?.tunnel_url || "",
-        bridge_secret: body.bridge_secret || "YOUR_BRIDGE_SECRET",
+        bridge_secret: body.bridge_secret || "CHANGE_ME_BRIDGE_SECRET",
         hostname: body.hostname || "spot-vm",
         data_disk: body.data_disk || {},
         services: body.services || {},
@@ -1222,11 +1222,17 @@ export default {
       }));
       const customToolsMap = idx.custom_tools || {};
       const customToolNames = Object.keys(customToolsMap);
-      const dynamicToolsets = {
-        ...TOOLSET_GROUPS,
-        all: [...new Set([...(TOOLSET_GROUPS.all || []), ...customToolNames])],
-        web: [...new Set([...(TOOLSET_GROUPS.web || []), ...customToolNames])]
-      };
+      const dynamicToolsets = {};
+      for (const [k, v] of Object.entries(TOOLSET_GROUPS)) {
+        if (k === "off") {
+          dynamicToolsets[k] = v;
+        } else {
+          dynamicToolsets[k] = {
+            ...v,
+            tools: [...new Set([...(v.tools || []), ...customToolNames])]
+          };
+        }
+      }
       return jsonResponse({
         ok: true,
         provider: "Google Vertex AI",

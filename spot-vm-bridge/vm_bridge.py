@@ -3,7 +3,7 @@
 Hermes Agent — Spot VM Persistent Bridge & Cloudflared Tunnel Supervisor (/data/hermes/vm_bridge.py)
 Exposes real Spot VM capabilities (/data filesystem, bash terminal, Python/Node code execution,
 58+ Hermes skills, SOUL.md/MEMORY.md/USER.md, process manager, and native `hermes` CLI)
-to the Cloudflare Web UI (https://your-hermes-domain.example.com) via an authenticated Cloudflare Tunnel.
+to the Cloudflare Web UI (https://hermes.yourdomain.com) via an authenticated Cloudflare Tunnel.
 """
 import base64
 import glob
@@ -22,10 +22,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 BRIDGE_PORT = 9120
-BRIDGE_SECRET = "YOUR_BRIDGE_SECRET"
-WORKER_URL = "https://your-hermes-domain.example.com"
+BRIDGE_SECRET = "CHANGE_ME_BRIDGE_SECRET"
+WORKER_URL = "https://hermes.yourdomain.com"
 AUTH_USER = "admin@example.com"
-AUTH_PASS = "YOUR_STRONG_PASSWORD"
+AUTH_PASS = "CHANGE_ME_STRONG_PASSWORD"
 
 HERMES_ROOT = Path("/data/hermes")
 HERMES_HOME = HERMES_ROOT / ".hermes"
@@ -45,7 +45,7 @@ SOUL_MD = HERMES_HOME / "SOUL.md"
 if not MEMORY_MD.exists():
     MEMORY_MD.write_text(
         "# Hermes Agent Persistent Memory (MEMORY.md)\n\n"
-        "- Deployment: Hosted on Cloudflare (`https://your-hermes-domain.example.com`) backed by Google Vertex AI (`YOUR_GCP_PROJECT_ID`).\n"
+        "- Deployment: Hosted on Cloudflare (`https://hermes.yourdomain.com`) backed by Google Vertex AI (`YOUR_GCP_PROJECT_ID`).\n"
         "- Persistent Storage: All local state, sessions, skills, and databases live on `/data/hermes/` on the Spot VM persistent disk.\n"
         "- Auto-Recovery: `/data/hermes/boot.sh` automatically restores symlinks and systemd services across Spot VM reallocations.\n",
         encoding="utf-8",
