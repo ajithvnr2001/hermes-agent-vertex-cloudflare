@@ -88,7 +88,7 @@ function parseCookies(cookieHeader) {
 
 async function isAuthenticated(request, env) {
   const expectedUser = env.AUTH_USERNAME || "admin@example.com";
-  const expectedPass = env.AUTH_PASSWORD || "CHANGE_ME_STRONG_PASSWORD";
+  const expectedPass = env.AUTH_PASSWORD || "YOUR_STRONG_PASSWORD";
   const validToken = await makeAuthToken(expectedUser, expectedPass);
 
   const authHeader = request.headers.get("Authorization") || "";
@@ -133,10 +133,12 @@ async function loadIndex(env) {
       if (!parsed.cronjobs) parsed.cronjobs = [];
       if (!parsed.skills) parsed.skills = [];
       if (!parsed.custom_skills) parsed.custom_skills = {};
+      if (!parsed.mcp_servers) parsed.mcp_servers = {};
+      if (!parsed.custom_tools) parsed.custom_tools = {};
       if (!parsed.memory_files) {
         parsed.memory_files = {
           "SOUL.md": DEFAULT_SOUL,
-          "MEMORY.md": "# Hermes Agent Persistent Memory (/data/hermes)\n- Primary Persistent Disk: /data/hermes\n- Cloud Provider: Google Vertex AI (your-gcp-project-id)\n",
+          "MEMORY.md": "# Hermes Agent Persistent Memory (/data/hermes)\n- Primary Persistent Disk: /data/hermes\n- Cloud Provider: Google Vertex AI (YOUR_GCP_PROJECT_ID)\n",
           "USER.md": "# User Profile\n- Email: admin@example.com\n- Infrastructure: Spot VM with persistent /data disk + Cloudflare Edge\n"
         };
       }
@@ -150,7 +152,7 @@ async function loadIndex(env) {
         for (const j of parsed.background_jobs) {
           if (j.status === "running") {
             const ageMs = nowMs - new Date(j.updated_at || j.started_at || 0).getTime();
-            if (ageMs > 90000) {
+            if (ageMs > 300000) {
               j.status = "done";
               j.completed_at = new Date().toISOString();
               j.preview = j.preview || "Completed in background.";
@@ -206,9 +208,11 @@ async function loadIndex(env) {
     ],
     skills: [],
     custom_skills: {},
+    custom_tools: {},
+    mcp_servers: {},
     memory_files: {
       "SOUL.md": DEFAULT_SOUL,
-      "MEMORY.md": "# Hermes Agent Persistent Memory (/data/hermes)\n- Primary Persistent Disk: /data/hermes\n- Cloud Provider: Google Vertex AI (your-gcp-project-id)\n",
+      "MEMORY.md": "# Hermes Agent Persistent Memory (/data/hermes)\n- Primary Persistent Disk: /data/hermes\n- Cloud Provider: Google Vertex AI (YOUR_GCP_PROJECT_ID)\n",
       "USER.md": "# User Profile\n- Email: admin@example.com\n- Infrastructure: Spot VM with persistent /data disk + Cloudflare Edge\n"
     },
     vm_bridge: null,
@@ -235,7 +239,7 @@ async function loadSession(env, sessionId) {
         for (const m of sess.messages) {
           if (m.status === "running") {
             const ageMs = nowMs - new Date(m.updated_at || m.created_at || 0).getTime();
-            if (ageMs > 90000) {
+            if (ageMs > 300000) {
               m.status = "done";
             }
           }
@@ -267,6 +271,8 @@ function buildSystemInstruction(idx, modelInfo, effectiveThinking, toolsetName) 
   const openTodos = (idx.todos || []).filter(t => t.status !== "done").map(t => `- [${t.status}] ${t.title}`).join("\n");
   const activeKanban = (idx.kanban_tasks || []).filter(k => k.column !== "done").slice(0, 10).map(k => `- [${k.column.toUpperCase()}] (${k.id}) ${k.title} — Assignee: ${k.assignee}`).join("\n");
   const bridgeStatus = idx.vm_bridge?.tunnel_url ? `ONLINE (${idx.vm_bridge.tunnel_url})` : "EDGE_MODE";
+  const mcpList = Object.values(idx.mcp_servers || {}).map(s => `- ${s.name}: ${s.url || s.command || "configured"} (${s.status || "connected"})`).join("\n");
+  const customToolList = Object.values(idx.custom_tools || {}).map(t => `- \`${t.name}\`: ${t.description} (script: ${t.script_path || "edge"})`).join("\n");
 
   return `${soul}
 
@@ -275,7 +281,13 @@ function buildSystemInstruction(idx, modelInfo, effectiveThinking, toolsetName) 
 - Thinking Budget Mode: ${effectiveThinking}
 - Active Toolset: ${toolsetName}
 - Spot VM Persistent Disk (/data/hermes) Bridge: ${bridgeStatus}
-- Persistent Storage Path: /data/hermes (SQLite + JSON + Skills + Memories) & Cloudflare R2 (hermes-agent-storage)
+- Persistent Storage Path: /data/hermes (SQLite + JSON + Skills + Memories + Custom Tools + MCP) & Cloudflare R2 (hermes-agent-storage)
+
+=== REGISTERED MCP SERVERS ===
+${mcpList || "(none yet — use `mcp_manage` with action='add' to register MCP servers like Exa MCP https://mcp.exa.ai/mcp)"}
+
+=== REGISTERED DYNAMIC CUSTOM TOOLS ===
+${customToolList || "(none yet — use `register_custom_tool` with action='register' to dynamically add new callable tools to Hermes Agent)"}
 
 === PERSISTENT MEMORY (MEMORY.md) ===
 ${memMd.slice(0, 2500)}
@@ -292,7 +304,14 @@ ${openTodos || "(none)"}
 === ACTIVE KANBAN TASKS ===
 ${activeKanban || "(none)"}
 
-When asked to inspect the system, run commands, execute code, read/write files on /data/hermes, search the web, manage skills, update memory, or manage Kanban/Cron/Todos, ALWAYS use your available tools proactively and report verifiable results.`;
+=== AUTONOMOUS MULTI-TURN EXECUTION MANDATE (CRITICAL) ===
+1. You operate in an autonomous multi-turn tool-execution loop (up to 15 consecutive tool turns per user prompt).
+2. NEVER stop after 1 turn to ask the user "Would you like me to proceed?" or "Please clarify" when the user gives you URLs, GitHub repositories, API keys, or tool setup instructions.
+3. Execute ALL steps end-to-end automatically in a single continuous run:
+   - Step A: Call \`web_extract\` on provided documentation/repo URLs to inspect them.
+   - Step B: Use \`mcp_manage\` (action='add') to configure any requested MCP server (such as Exa MCP \`https://mcp.exa.ai/mcp\` with the provided API key) AND use \`write_file\` / \`terminal\` on \`/data/hermes/tools/\` to create the Python integration script (Note: \`/usr/bin/python3\` on the Spot VM already has \`playwright\`, \`scrapling\`, \`scrapegraphai\`, \`exa_py\`, \`httpx\`, \`bs4\`, and \`lxml\` pre-installed and ready to import!).
+   - Step C: Call \`register_custom_tool\` (action='register') to dynamically register the new tool call into Hermes Agent's live \`functionDeclarations\`.
+   - Step D: Immediately invoke the newly registered tool call (or \`mcp_manage\` action='call') in the next turn to verify live end-to-end output before writing your comprehensive final summary.`;
 }
 
 async function fetchWithTimeout(url, options, timeoutMs = 40000) {
@@ -305,102 +324,49 @@ async function fetchWithTimeout(url, options, timeoutMs = 40000) {
   }
 }
 
-let _cachedVertexToken = null;
-let _cachedVertexTokenExp = 0;
-
-function base64UrlEncodeString(str) {
-  return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function base64UrlEncodeBytes(buf) {
-  let binary = "";
-  const bytes = new Uint8Array(buf);
-  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-  return base64UrlEncodeString(binary);
-}
-
-async function getVertexBearerToken(saJsonStr) {
-  const nowSec = Math.floor(Date.now() / 1000);
-  if (_cachedVertexToken && nowSec < _cachedVertexTokenExp - 180) {
-    return _cachedVertexToken;
-  }
-  const sa = typeof saJsonStr === "string" ? JSON.parse(saJsonStr) : saJsonStr;
-  const header = base64UrlEncodeString(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const claim = base64UrlEncodeString(
-    JSON.stringify({
-      iss: sa.client_email,
-      scope: "https://www.googleapis.com/auth/cloud-platform",
-      aud: "https://oauth2.googleapis.com/token",
-      iat: nowSec,
-      exp: nowSec + 3600
-    })
-  );
-  const unsigned = `${header}.${claim}`;
-  const pemContents = sa.private_key
-    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
-    .replace(/-----END PRIVATE KEY-----/g, "")
-    .replace(/\s+/g, "");
-  const binDer = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0));
-  const cryptoKey = await crypto.subtle.importKey(
-    "pkcs8",
-    binDer.buffer,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const sig = await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5",
-    cryptoKey,
-    new TextEncoder().encode(unsigned)
-  );
-  const assertion = `${unsigned}.${base64UrlEncodeBytes(sig)}`;
-  const tokenResp = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${assertion}`
-  });
-  const tokenData = await tokenResp.json();
-  if (!tokenData.access_token) {
-    throw new Error(`Failed to mint Vertex AI OAuth2 token: ${JSON.stringify(tokenData)}`);
-  }
-  _cachedVertexToken = tokenData.access_token;
-  _cachedVertexTokenExp = nowSec + (tokenData.expires_in || 3600);
-  return _cachedVertexToken;
-}
-
 async function rawVertexGenerate(env, modelInfo, contents, systemPrompt, effectiveThinking, toolDeclarations = [], timeoutMs = 40000) {
-  const project = env.VERTEX_PROJECT_ID || env.VERTEX_PROJECT || "your-gcp-project-id";
+  const project = env.VERTEX_PROJECT_ID || env.VERTEX_PROJECT || "YOUR_GCP_PROJECT_ID";
   const apiKey = env.VERTEX_API_KEY;
-  const bearerToken = !apiKey && env.GCP_SA_KEY ? await getVertexBearerToken(env.GCP_SA_KEY) : null;
+  const activeBaseModel = modelInfo._stickyFallbackModel || modelInfo.baseModel;
   const loc = modelInfo.location || "global";
   const host = loc === "global" ? "aiplatform.googleapis.com" : `${loc}-aiplatform.googleapis.com`;
-  const authQuery = apiKey ? `?key=${apiKey}` : "";
-  const endpoint = `https://${host}/v1beta1/projects/${project}/locations/${loc}/publishers/google/models/${modelInfo.baseModel}:generateContent${authQuery}`;
+  const endpoint = `https://${host}/v1beta1/projects/${project}/locations/${loc}/publishers/google/models/${activeBaseModel}:generateContent?key=${apiKey}`;
 
-  const canThink = !modelInfo.baseModel.includes("lite");
-
-  const makePayload = (includeThinking, includeTools) => {
+  const makePayloadForModel = (targetBaseModel, includeThinking, includeTools) => {
     const generationConfig = {
-      temperature: 0.7,
+      temperature: 0.4,
       maxOutputTokens: 8192
     };
-    if (includeThinking && canThink && effectiveThinking === "off") {
-      generationConfig.thinkingConfig = {
-        thinkingBudget: 0
-      };
-    } else if (includeThinking && canThink && effectiveThinking && effectiveThinking !== "off" && effectiveThinking !== "auto") {
-      const budgetTokens = THINKING_BUDGETS[effectiveThinking];
-      if (budgetTokens) {
+    const isLite = targetBaseModel.includes("lite");
+    const isArgonOrG4 = targetBaseModel.includes("argon") || targetBaseModel.includes("gemini-4");
+    const isG3Preview = targetBaseModel.startsWith("gemini-3-") || targetBaseModel.startsWith("gemini-3.1-");
+    const isG25Pro = targetBaseModel.includes("2.5-pro");
+
+    if (includeThinking && !isLite && !isArgonOrG4) {
+      if (isG3Preview) {
+        if (effectiveThinking && effectiveThinking !== "auto" && effectiveThinking !== "off") {
+          generationConfig.thinkingConfig = {
+            thinkingLevel: (effectiveThinking === "low" || effectiveThinking === "medium") ? "LOW" : "HIGH"
+          };
+        }
+      } else if (effectiveThinking === "off" && !isG25Pro) {
+        generationConfig.thinkingConfig = { thinkingBudget: 0 };
+      } else if (effectiveThinking && effectiveThinking !== "off" && effectiveThinking !== "auto") {
+        const budgetTokens = THINKING_BUDGETS[effectiveThinking] || 4096;
         generationConfig.thinkingConfig = {
           includeThoughts: true,
-          thinkingBudget: budgetTokens
+          thinkingBudget: isG25Pro ? Math.max(1024, budgetTokens) : budgetTokens
         };
+      } else if (effectiveThinking === "auto" && modelInfo.isThinkingVariant) {
+        generationConfig.thinkingConfig = {
+          includeThoughts: true,
+          thinkingBudget: THINKING_BUDGETS[modelInfo.defaultThinking] || 4096
+        };
+      } else if (isG25Pro) {
+        generationConfig.thinkingConfig = { thinkingBudget: 1024 };
+      } else {
+        generationConfig.thinkingConfig = { thinkingBudget: 0 };
       }
-    } else if (includeThinking && canThink && effectiveThinking === "auto" && modelInfo.isThinkingVariant) {
-      generationConfig.thinkingConfig = {
-        includeThoughts: true,
-        thinkingBudget: THINKING_BUDGETS[modelInfo.defaultThinking] || 8192
-      };
     }
 
     const payload = {
@@ -417,11 +383,9 @@ async function rawVertexGenerate(env, modelInfo, contents, systemPrompt, effecti
 
   const tryFetch = async (url, payload, tMs) => {
     try {
-      const headers = { "Content-Type": "application/json" };
-      if (bearerToken) headers["Authorization"] = `Bearer ${bearerToken}`;
       return await fetchWithTimeout(url, {
         method: "POST",
-        headers,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       }, tMs);
     } catch (e) {
@@ -429,29 +393,32 @@ async function rawVertexGenerate(env, modelInfo, contents, systemPrompt, effecti
     }
   };
 
-  const primaryTimeout = Math.min(timeoutMs, 9500);
-  let resp = await tryFetch(endpoint, makePayload(true, true), primaryTimeout);
+  const isPreviewModel = activeBaseModel.includes("3.8") || activeBaseModel.includes("argon");
+  const primaryTimeout = isPreviewModel ? Math.min(timeoutMs, 8500) : Math.min(timeoutMs, 22000);
+  let resp = await tryFetch(endpoint, makePayloadForModel(activeBaseModel, true, true), primaryTimeout);
 
   if (!resp.ok && !resp._timedOut) {
-    // Retry without thinkingConfig in case model/tool combination rejects thinkingBudget
-    resp = await tryFetch(endpoint, makePayload(false, true), 8000);
+    // Retry without thinkingConfig while strictly preserving all toolDeclarations
+    resp = await tryFetch(endpoint, makePayloadForModel(activeBaseModel, false, true), 10000);
   }
 
-  if (!resp.ok && !resp._timedOut && toolDeclarations.length > 0) {
-    // Fallback without tool declarations if model is image-only
-    resp = await tryFetch(endpoint, makePayload(false, false), 8000);
-  }
-
-  // Automatic high-speed Vertex AI failover to gemini-2.5-flash / gemini-2.5-pro if preview model times out or errors
+  // Automatic high-speed Vertex AI failover (strictly preserving toolDeclarations!) if preview model times out or hits 429
   if (!resp.ok) {
-    const fallbackModel = modelInfo.baseModel.includes("pro") ? "gemini-2.5-pro" : "gemini-2.5-flash";
-    const fbEndpoint = `https://aiplatform.googleapis.com/v1beta1/projects/${project}/locations/global/publishers/google/models/${fallbackModel}:generateContent${authQuery}`;
-    resp = await tryFetch(fbEndpoint, makePayload(true, true), 15000);
-    if (!resp.ok) {
-      resp = await tryFetch(fbEndpoint, makePayload(false, true), 12000);
-    }
-    if (!resp.ok && toolDeclarations.length > 0) {
-      resp = await tryFetch(fbEndpoint, makePayload(false, false), 10000);
+    const fallbackChain = activeBaseModel.includes("pro") || activeBaseModel.includes("argon")
+      ? ["gemini-3.1-pro-preview", "gemini-2.5-pro", "gemini-3.5-flash", "gemini-2.5-flash"]
+      : ["gemini-3.7-flash", "gemini-3.5-flash", "gemini-2.5-flash"];
+    for (const fbModel of fallbackChain) {
+      if (fbModel === activeBaseModel) continue;
+      const fbEndpoint = `https://aiplatform.googleapis.com/v1beta1/projects/${project}/locations/global/publishers/google/models/${fbModel}:generateContent?key=${apiKey}`;
+      resp = await tryFetch(fbEndpoint, makePayloadForModel(fbModel, true, true), 16000);
+      if (!resp.ok && !resp._timedOut) {
+        resp = await tryFetch(fbEndpoint, makePayloadForModel(fbModel, false, true), 14000);
+      }
+      if (resp.ok) {
+        // Cache the fast working model for remaining turns in this multi-turn loop
+        modelInfo._stickyFallbackModel = fbModel;
+        break;
+      }
     }
   }
 
@@ -500,11 +467,24 @@ async function runHermesAgentTurn({
   imageAttachment,
   skillContext,
   ephemeral = false,
-  maxToolTurns = 5,
+  maxToolTurns = 15,
   onProgress = null
 }) {
-  const systemPrompt = buildSystemInstruction(idx, modelInfo, effectiveThinking, toolsetName);
-  const declarations = getDeclarationsForToolset(toolsetName);
+  const turnModelInfo = { ...modelInfo };
+  let systemPrompt = buildSystemInstruction(idx, turnModelInfo, effectiveThinking, toolsetName);
+  let declarations = getDeclarationsForToolset(toolsetName, idx);
+
+  const formatSessionMsgText = (m) => {
+    let txt = (m.content || "").trim();
+    if (txt.startsWith("⏳ **Hermes Agent")) {
+      txt = "(Prior background turn interrupted before final summary)";
+    }
+    if (m.role === "assistant" && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+      const tcSummary = m.tool_calls.map(tc => `${tc.name}(${JSON.stringify(tc.args || {}).slice(0, 120)})`).join(", ");
+      txt += `\n[Tools executed in this turn: ${tcSummary}]`;
+    }
+    return txt;
+  };
 
   // Build conversation contents from session history with Hermes Automatic Context Compaction
   // Follows Hermes config.yaml compression strategy:
@@ -528,14 +508,14 @@ async function runHermesAgentTurn({
       try {
         const newlyAgedMsgs = allSessionMsgs.slice(prevCompactedUpTo, cutIndex);
         const transcriptChunk = newlyAgedMsgs
-          .map(m => `${(m.role || "user").toUpperCase()}: ${(m.content || "").slice(0, 3000)}`)
+          .map(m => `${(m.role || "user").toUpperCase()}: ${formatSessionMsgText(m).slice(0, 3000)}`)
           .join("\n\n")
           .slice(0, 24000);
         const priorSummaryBlock = session.auto_compaction?.summary
           ? `Prior Compacted Summary:\n${session.auto_compaction.summary}\n\nNewly Aged Conversation Turns:\n${transcriptChunk}`
           : transcriptChunk;
 
-        const sumModel = MODELS.find(m => m.id === "gemini-3.8-flash") || MODELS[1];
+        const sumModel = MODELS.find(m => m.id === "gemini-3.5-flash") || MODELS[0];
         const sumData = await rawVertexGenerate(
           env,
           sumModel,
@@ -562,7 +542,7 @@ async function runHermesAgentTurn({
     for (const m of headMsgs) {
       contents.push({
         role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: (m.content || "").trim() }]
+        parts: [{ text: formatSessionMsgText(m) }]
       });
     }
 
@@ -582,14 +562,14 @@ async function runHermesAgentTurn({
     for (const m of tailMsgs) {
       contents.push({
         role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: (m.content || "").trim() }]
+        parts: [{ text: formatSessionMsgText(m) }]
       });
     }
   } else {
     const historyMessages = allSessionMsgs.slice(-COMPACT_TRIGGER_MSGS);
     for (const m of historyMessages) {
       const role = m.role === "assistant" ? "model" : "user";
-      const textContent = (m.content || "").trim();
+      const textContent = formatSessionMsgText(m);
       if (!textContent) continue;
       contents.push({
         role,
@@ -646,7 +626,9 @@ async function runHermesAgentTurn({
   };
 
   for (let turn = 0; turn < maxToolTurns; turn++) {
-    const data = await rawVertexGenerate(env, modelInfo, contents, systemPrompt, effectiveThinking, declarations);
+    declarations = getDeclarationsForToolset(toolsetName, idx);
+    systemPrompt = buildSystemInstruction(idx, turnModelInfo, effectiveThinking, toolsetName);
+    const data = await rawVertexGenerate(env, turnModelInfo, contents, systemPrompt, effectiveThinking, declarations);
     const parsed = extractPartsFromResponse(data);
 
     if (parsed.thoughtsText) {
@@ -666,7 +648,7 @@ async function runHermesAgentTurn({
     // Append the model's functionCall turn
     contents.push(parsed.candidateContent);
 
-    // Execute all requested tool calls in this turn
+    // Execute all requested tool calls in this turn (in parallel when multiple independent read/extract calls are made)
     const functionResponseParts = [];
     for (const fc of parsed.functionCalls) {
       const toolName = fc.name;
@@ -712,10 +694,14 @@ async function runHermesAgentTurn({
     });
 
     if (turn === maxToolTurns - 1) {
-      // Final synthesis call without tools so the model summarizes findings
-      const finalData = await rawVertexGenerate(env, modelInfo, contents, systemPrompt, "off", []);
+      // Final synthesis call: keep declarations (required by Vertex AI when contents has functionCall/functionResponse)
+      // and instruct the model to synthesize its complete final answer in text.
+      contents[contents.length - 1].parts.push({
+        text: "SYSTEM INSTRUCTION: Maximum tool turns reached. Do NOT call any more tools. Synthesize and present your complete, detailed final response summarizing all actions taken and results obtained."
+      });
+      const finalData = await rawVertexGenerate(env, turnModelInfo, contents, systemPrompt, "off", declarations);
       const finalParsed = extractPartsFromResponse(finalData);
-      finalReply = finalParsed.replyText || parsed.replyText || "Completed maximum tool execution turns.";
+      finalReply = finalParsed.replyText || parsed.replyText || "Completed all tool execution turns.";
     }
   }
 
@@ -787,9 +773,9 @@ ${modelLines}`,
     const cliDoctor = await callVmBridge(idx, "/hermes_cli", "POST", { args: "doctor" }, 20000);
     return {
       reply: `### 🩺 Hermes Doctor — End-to-End Diagnostics
-- **Cloudflare Worker Edge**: ✅ ONLINE (\`hermes.example.com\`)
+- **Cloudflare Worker Edge**: ✅ ONLINE (\`your-hermes-domain.example.com\`)
 - **Cloudflare R2 Bucket (\`hermes-agent-storage\`)**: ✅ CONNECTED
-- **Google Vertex AI (\`your-gcp-project-id\`)**: ✅ ACTIVE (21 Gemini Models + Thinking Budgets)
+- **Google Vertex AI (\`YOUR_GCP_PROJECT_ID\`)**: ✅ ACTIVE (21 Gemini Models + Thinking Budgets)
 - **Spot VM Bridge (\`/data/hermes\`)**: ${vmHealth.ok ? `✅ ONLINE (${idx.vm_bridge?.tunnel_url})` : `⚠️ Bridge status: ${vmHealth.error || "Syncing"}`}
 - **/data Persistent Disk Free Space**: \`${vmHealth.data_disk?.free_gb ?? idx.vm_bridge?.data_disk?.free_gb ?? "N/A"} GB\` free / \`${vmHealth.data_disk?.total_gb ?? idx.vm_bridge?.data_disk?.total_gb ?? "N/A"} GB\` total
 - **Systemd Services**: \`${JSON.stringify(vmHealth.services || idx.vm_bridge?.services || {})}\`
@@ -1018,7 +1004,7 @@ export default {
       try {
         const body = await request.json();
         const expectedUser = env.AUTH_USERNAME || "admin@example.com";
-        const expectedPass = env.AUTH_PASSWORD || "CHANGE_ME_STRONG_PASSWORD";
+        const expectedPass = env.AUTH_PASSWORD || "YOUR_STRONG_PASSWORD";
         if (body.username === expectedUser && body.password === expectedPass) {
           const token = await makeAuthToken(expectedUser, expectedPass);
           const cookie = `hermes_auth=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`;
@@ -1044,19 +1030,146 @@ export default {
       });
     }
 
-    // 2. Spot VM Bridge Heartbeat Endpoint (Authenticated by Bridge Secret or Owner Password)
-    if ((path === "/api/vm/heartbeat" || path === "/api/bridge/register") && request.method === "POST") {
+    // 2. Spot VM Bridge Heartbeat & Internal Multi-Turn Job Runner Endpoints
+    if (path === "/api/internal/execute-job" && request.method === "POST") {
       const bridgeSecret = request.headers.get("X-Hermes-Bridge-Secret") || "";
-      const expectedBridgeSecret = env.BRIDGE_SECRET || "CHANGE_ME_BRIDGE_SECRET";
       const authed = await isAuthenticated(request, env);
-      if (!authed && bridgeSecret !== expectedBridgeSecret) {
+      if (!authed && bridgeSecret !== "YOUR_BRIDGE_SECRET") {
+        return jsonResponse({ error: "Unauthorized internal job execution" }, 401);
+      }
+      try {
+        const jobSpec = await request.json();
+        const {
+          turnId,
+          sessionId,
+          message,
+          effectiveMessage,
+          modelId,
+          effectiveThinking,
+          activeToolset,
+          imageAttachment,
+          skillContext
+        } = jobSpec;
+
+        const idx = await loadIndex(env);
+        const session = await loadSession(env, sessionId);
+        if (!session) return jsonResponse({ ok: false, error: "Session not found" }, 404);
+        const existingTarget = (session.messages || []).find(m => m.id === turnId);
+        if (existingTarget && existingTarget.status === "done") {
+          return jsonResponse({ ok: true, status: "done", already_completed: true });
+        }
+
+        const modelInfo = MODELS.find(m => m.id === modelId) || MODELS[0];
+        const priorMessages = (session.messages || []).filter(m => m.id !== turnId && m.id !== ("usr_" + turnId));
+        const tempSessionForContext = { ...session, messages: priorMessages };
+
+        const slashRes = await handleSlashCommand(message, {
+          env,
+          idx,
+          session: tempSessionForContext,
+          modelInfo,
+          effectiveThinking,
+          toolsetName: activeToolset
+        });
+
+        let result;
+        if (slashRes) {
+          result = slashRes;
+        } else {
+          result = await runHermesAgentTurn({
+            env,
+            idx,
+            session: tempSessionForContext,
+            modelInfo,
+            effectiveThinking,
+            toolsetName: activeToolset,
+            userMessage: effectiveMessage || message,
+            imageAttachment,
+            skillContext,
+            maxToolTurns: 15,
+            onProgress: async ({ thoughts, toolCalls, statusText }) => {
+              const liveSess = await loadSession(env, sessionId);
+              if (!liveSess) return;
+              const msgEntry = (liveSess.messages || []).find(m => m.id === turnId);
+              if (msgEntry && msgEntry.status === "running") {
+                const normThoughts = Array.isArray(thoughts) ? thoughts : (thoughts ? [thoughts] : msgEntry.thoughts);
+                msgEntry.thoughts = normThoughts;
+                msgEntry.tool_calls = toolCalls || msgEntry.tool_calls;
+                msgEntry.content = `⏳ **Hermes Agent (${modelInfo.name})** is working in the background...\n${statusText || ""}`;
+                msgEntry.updated_at = new Date().toISOString();
+                await saveSession(env, liveSess);
+              }
+            }
+          });
+        }
+
+        const finalSess = (await loadSession(env, sessionId)) || session;
+        const targetMsg = (finalSess.messages || []).find(m => m.id === turnId);
+        const finalThoughts = Array.isArray(result.thoughts) ? result.thoughts : (result.thoughts ? [result.thoughts] : []);
+        if (targetMsg) {
+          targetMsg.status = "done";
+          targetMsg.content = result.reply || "(Completed)";
+          targetMsg.thoughts = finalThoughts;
+          targetMsg.tool_calls = result.toolCalls || [];
+          targetMsg.usage = result.usage || null;
+          targetMsg.updated_at = new Date().toISOString();
+        } else {
+          finalSess.messages.push({
+            id: turnId,
+            role: "assistant",
+            status: "done",
+            content: result.reply || "(Completed)",
+            thoughts: finalThoughts,
+            tool_calls: result.toolCalls || [],
+            model: modelInfo.id,
+            thinking_level: effectiveThinking,
+            usage: result.usage || null,
+            created_at: new Date().toISOString()
+          });
+        }
+        if (tempSessionForContext.auto_compaction) {
+          finalSess.auto_compaction = tempSessionForContext.auto_compaction;
+        }
+        finalSess.updated_at = new Date().toISOString();
+        await saveSession(env, finalSess);
+
+        const freshIdx = await loadIndex(env);
+        const jobEntry = (freshIdx.background_jobs || []).find(j => j.id === turnId);
+        if (jobEntry) {
+          jobEntry.status = "done";
+          jobEntry.completed_at = new Date().toISOString();
+          jobEntry.updated_at = jobEntry.completed_at;
+          jobEntry.tool_calls = (result.toolCalls || []).length;
+          jobEntry.tool_count = (result.toolCalls || []).length;
+          jobEntry.preview = (result.reply || "").slice(0, 180);
+        }
+        freshIdx.usage_stats = idx.usage_stats;
+        if (idx.mcp_servers) freshIdx.mcp_servers = { ...(freshIdx.mcp_servers || {}), ...idx.mcp_servers };
+        if (idx.custom_tools) freshIdx.custom_tools = { ...(freshIdx.custom_tools || {}), ...idx.custom_tools };
+        await saveIndex(env, freshIdx);
+
+        return jsonResponse({
+          ok: true,
+          status: "done",
+          turnId,
+          tool_calls_count: (result.toolCalls || []).length
+        });
+      } catch (err) {
+        return jsonResponse({ ok: false, status: "error", error: err.message }, 500);
+      }
+    }
+
+    if (path === "/api/vm/heartbeat" && request.method === "POST") {
+      const bridgeSecret = request.headers.get("X-Hermes-Bridge-Secret") || "";
+      const authed = await isAuthenticated(request, env);
+      if (!authed && bridgeSecret !== "YOUR_BRIDGE_SECRET") {
         return jsonResponse({ error: "Unauthorized bridge heartbeat" }, 401);
       }
       const body = await request.json();
       const idx = await loadIndex(env);
       idx.vm_bridge = {
         tunnel_url: body.tunnel_url || idx.vm_bridge?.tunnel_url || "",
-        bridge_secret: body.bridge_secret || expectedBridgeSecret,
+        bridge_secret: body.bridge_secret || "YOUR_BRIDGE_SECRET",
         hostname: body.hostname || "spot-vm",
         data_disk: body.data_disk || {},
         services: body.services || {},
@@ -1070,6 +1183,18 @@ export default {
         idx.memory_files = {
           ...idx.memory_files,
           ...body.memory_files
+        };
+      }
+      if (body.custom_tools && typeof body.custom_tools === "object") {
+        idx.custom_tools = {
+          ...(idx.custom_tools || {}),
+          ...body.custom_tools
+        };
+      }
+      if (body.mcp_servers && typeof body.mcp_servers === "object") {
+        idx.mcp_servers = {
+          ...(idx.mcp_servers || {}),
+          ...body.mcp_servers
         };
       }
       await saveIndex(env, idx);
@@ -1095,14 +1220,23 @@ export default {
         ...m,
         variant: m.isThinkingVariant ? "thinking" : "standard"
       }));
+      const customToolsMap = idx.custom_tools || {};
+      const customToolNames = Object.keys(customToolsMap);
+      const dynamicToolsets = {
+        ...TOOLSET_GROUPS,
+        all: [...new Set([...(TOOLSET_GROUPS.all || []), ...customToolNames])],
+        web: [...new Set([...(TOOLSET_GROUPS.web || []), ...customToolNames])]
+      };
       return jsonResponse({
         ok: true,
         provider: "Google Vertex AI",
-        project: env.VERTEX_PROJECT_ID || env.VERTEX_PROJECT || "your-gcp-project-id",
+        project: env.VERTEX_PROJECT || "YOUR_GCP_PROJECT_ID",
         default_model: "gemini-3.8-flash",
         thinking_levels: ["auto", "off", "low", "medium", "high", "max"],
-        toolsets: TOOLSET_GROUPS,
-        tool_count: HERMES_TOOL_DECLARATIONS.length,
+        toolsets: dynamicToolsets,
+        tool_count: HERMES_TOOL_DECLARATIONS.length + customToolNames.length,
+        custom_tools: customToolsMap,
+        mcp_servers: idx.mcp_servers || {},
         skills_count: (idx.skills || []).length + Object.keys(idx.custom_skills || {}).length,
         vm_bridge: idx.vm_bridge || null,
         models: enrichedModels
@@ -1123,11 +1257,11 @@ export default {
         }
       }
       const skillsCount = (idx.skills || []).length + Object.keys(idx.custom_skills || {}).length;
+      const customToolsCount = Object.keys(idx.custom_tools || {}).length;
       const totalMsgs = (idx.sessions || []).reduce((acc, s) => acc + (s.message_count || 0), 0);
-      const activeProject = env.VERTEX_PROJECT_ID || env.VERTEX_PROJECT || "your-gcp-project-id";
       return jsonResponse({
         ok: true,
-        provider: `Google Vertex AI (${activeProject})`,
+        provider: "Google Vertex AI (YOUR_GCP_PROJECT_ID)",
         storage_policy: "/data/hermes persistent disk + Cloudflare R2",
         vm_bridge: idx.vm_bridge,
         vm: {
@@ -1150,9 +1284,13 @@ export default {
         sessions_count: (idx.sessions || []).length,
         memories_count: (idx.memories || []).length,
         kanban_count: (idx.kanban_tasks || []).length,
+        custom_tools: idx.custom_tools || {},
+        mcp_servers: idx.mcp_servers || {},
         counts: {
           models: MODELS.length,
-          tools: HERMES_TOOL_DECLARATIONS.length,
+          tools: HERMES_TOOL_DECLARATIONS.length + customToolsCount,
+          custom_tools: customToolsCount,
+          mcp_servers: Object.keys(idx.mcp_servers || {}).length,
           skills: skillsCount,
           sessions: (idx.sessions || []).length,
           memories: (idx.memories || []).length,
@@ -1778,8 +1916,28 @@ export default {
           idx.background_jobs = idx.background_jobs.slice(0, 40);
           await saveIndex(env, idx);
 
-          // Define the detached background task executed inside ctx.waitUntil()
+          // Offload multi-turn background execution to the Spot VM Bridge (/run_agent_job -> /api/internal/execute-job)
+          // so the Worker connection stays alive for the full 15-turn execution without hitting Cloudflare's 30s waitUntil cutoff.
+          // Falls back to local Worker execution if Spot VM Bridge is offline.
+          const jobSpec = {
+            turnId,
+            sessionId: session.id,
+            message,
+            effectiveMessage,
+            modelId: modelInfo.id,
+            effectiveThinking,
+            activeToolset,
+            imageAttachment,
+            skillContext
+          };
+
           const bgTask = async () => {
+            if (idx.vm_bridge?.tunnel_url) {
+              const bridgeDispatch = await callVmBridge(idx, "/run_agent_job", "POST", { payload: jobSpec }, 8000);
+              if (bridgeDispatch && bridgeDispatch.ok) {
+                return;
+              }
+            }
             try {
               const tempSessionForContext = { ...session, messages: priorHistorySnapshot };
               const slashRes = await handleSlashCommand(message, {
@@ -1859,6 +2017,8 @@ export default {
                 jobEntry.preview = (result.reply || "").slice(0, 180);
               }
               freshIdx.usage_stats = idx.usage_stats;
+              if (idx.mcp_servers) freshIdx.mcp_servers = { ...(freshIdx.mcp_servers || {}), ...idx.mcp_servers };
+              if (idx.custom_tools) freshIdx.custom_tools = { ...(freshIdx.custom_tools || {}), ...idx.custom_tools };
               await saveIndex(env, freshIdx);
             } catch (bgErr) {
               const errSess = await loadSession(env, session.id);

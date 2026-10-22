@@ -3,7 +3,7 @@
 Hermes Agent — Spot VM Persistent Bridge & Cloudflared Tunnel Supervisor (/data/hermes/vm_bridge.py)
 Exposes real Spot VM capabilities (/data filesystem, bash terminal, Python/Node code execution,
 58+ Hermes skills, SOUL.md/MEMORY.md/USER.md, process manager, and native `hermes` CLI)
-to the Cloudflare Web UI (https://hermes.example.com) via an authenticated Cloudflare Tunnel.
+to the Cloudflare Web UI (https://your-hermes-domain.example.com) via an authenticated Cloudflare Tunnel.
 """
 import base64
 import glob
@@ -21,26 +21,13 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-def _load_dotenv(env_path="/data/hermes/.env"):
-    p = Path(env_path)
-    if p.is_file():
-        for line in p.read_text(encoding="utf-8", errors="ignore").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+BRIDGE_PORT = 9120
+BRIDGE_SECRET = "YOUR_BRIDGE_SECRET"
+WORKER_URL = "https://your-hermes-domain.example.com"
+AUTH_USER = "admin@example.com"
+AUTH_PASS = "YOUR_STRONG_PASSWORD"
 
-
-_load_dotenv(os.environ.get("HERMES_ENV_FILE", "/data/hermes/.env"))
-
-BRIDGE_PORT = int(os.environ.get("HERMES_BRIDGE_PORT", "9120"))
-BRIDGE_SECRET = os.environ.get("HERMES_BRIDGE_SECRET", "CHANGE_ME_BRIDGE_SECRET")
-WORKER_URL = os.environ.get("HERMES_WORKER_URL", "https://hermes.example.com")
-AUTH_USER = os.environ.get("HERMES_AUTH_USER", "admin@example.com")
-AUTH_PASS = os.environ.get("HERMES_AUTH_PASSWORD", "CHANGE_ME_STRONG_PASSWORD")
-
-HERMES_ROOT = Path(os.environ.get("HERMES_DATA_DIR", "/data/hermes"))
+HERMES_ROOT = Path("/data/hermes")
 HERMES_HOME = HERMES_ROOT / ".hermes"
 SKILLS_DIR = HERMES_HOME / "skills"
 MEMORIES_DIR = HERMES_HOME / "memories"
@@ -58,7 +45,7 @@ SOUL_MD = HERMES_HOME / "SOUL.md"
 if not MEMORY_MD.exists():
     MEMORY_MD.write_text(
         "# Hermes Agent Persistent Memory (MEMORY.md)\n\n"
-        "- Deployment: Hosted on Cloudflare (`https://hermes.example.com`) backed by Google Vertex AI (`your-gcp-project-id`).\n"
+        "- Deployment: Hosted on Cloudflare (`https://your-hermes-domain.example.com`) backed by Google Vertex AI (`YOUR_GCP_PROJECT_ID`).\n"
         "- Persistent Storage: All local state, sessions, skills, and databases live on `/data/hermes/` on the Spot VM persistent disk.\n"
         "- Auto-Recovery: `/data/hermes/boot.sh` automatically restores symlinks and systemd services across Spot VM reallocations.\n",
         encoding="utf-8",
@@ -67,8 +54,8 @@ if not MEMORY_MD.exists():
 if not USER_MD.exists():
     USER_MD.write_text(
         "# User Profile (USER.md)\n\n"
-        "- **Owner / Admin:** Workspace Owner (`admin@example.com`)\n"
-        "- **Cloud Project:** Google Cloud `your-gcp-project-id` (Vertex AI Gemini models + Thinking variants)\n"
+        "- **Owner / Admin:** Ajith (`admin@example.com`)\n"
+        "- **Cloud Project:** Google Cloud `YOUR_GCP_PROJECT_ID` (Vertex AI Gemini models + Thinking variants)\n"
         "- **Infrastructure:** Azure Spot VM with 251 GB persistent disk mounted at `/data` + Cloudflare Workers & R2.\n",
         encoding="utf-8",
     )
@@ -84,7 +71,7 @@ def get_env():
     env = os.environ.copy()
     env["HOME"] = "/root"
     env["HERMES_HOME"] = str(HERMES_HOME)
-    env["PATH"] = f"{HERMES_HOME}/hermes-agent/venv/bin:/data/bin:/usr/local/bin:/usr/bin:/bin"
+    env["PATH"] = f"/data/bin:/usr/local/bin:/usr/bin:/bin:{HERMES_HOME}/hermes-agent/venv/bin"
     return env
 
 
@@ -425,6 +412,81 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             args = body.get("args", "--version")
             return self._send(200, run_cmd(f"{HERMES_BIN} {args}", workdir="/data/hermes/.hermes/hermes-agent", timeout=60))
 
+        if self.path == "/custom_tools":
+            tools_dir = HERMES_ROOT / "tools"
+            tools_dir.mkdir(parents=True, exist_ok=True)
+            manifest_path = HERMES_HOME / "custom_tools.json"
+            existing = {}
+            if manifest_path.exists():
+                try:
+                    existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+                except Exception:
+                    existing = {}
+            action = (body.get("action") or "list").lower()
+            if action == "register":
+                tname = body.get("name", "custom_tool")
+                code = body.get("code", "")
+                script_path = body.get("script_path", "")
+                if code and not script_path:
+                    sfile = tools_dir / f"{tname}.py"
+                    sfile.write_text(code, encoding="utf-8")
+                    sfile.chmod(0o755)
+                    script_path = str(sfile)
+                elif code and script_path:
+                    sfile = Path(script_path)
+                    sfile.parent.mkdir(parents=True, exist_ok=True)
+                    sfile.write_text(code, encoding="utf-8")
+                    sfile.chmod(0o755)
+                tool_entry = {
+                    "name": tname,
+                    "description": body.get("description", ""),
+                    "parameters": body.get("parameters", {}),
+                    "handler_type": body.get("handler_type", "python_script"),
+                    "script_path": script_path,
+                    "command": body.get("command", ""),
+                    "api_key": body.get("api_key", ""),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+                existing[tname] = tool_entry
+                manifest_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+                return self._send(200, {"ok": True, "tool": tool_entry, "custom_tools": existing})
+            if action == "delete":
+                tname = body.get("name", "")
+                existing.pop(tname, None)
+                manifest_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+                return self._send(200, {"ok": True, "deleted": tname, "custom_tools": existing})
+            return self._send(200, {"ok": True, "custom_tools": existing})
+
+        if self.path == "/run_agent_job":
+            job_payload = body.get("payload") or body
+
+            def _orchestrate_job():
+                basic = base64.b64encode(f"{AUTH_USER}:{AUTH_PASS}".encode()).decode()
+                hdrs = {
+                    "Authorization": f"Basic {basic}",
+                    "X-Hermes-Bridge-Secret": BRIDGE_SECRET,
+                    "User-Agent": "HermesVMBridge/2.0",
+                    "Content-Type": "application/json",
+                }
+                for attempt in range(3):
+                    try:
+                        req = urllib.request.Request(
+                            f"{WORKER_URL}/api/internal/execute-job",
+                            data=json.dumps(job_payload).encode("utf-8"),
+                            headers=hdrs,
+                            method="POST",
+                        )
+                        with urllib.request.urlopen(req, timeout=240) as resp:
+                            res_data = json.loads(resp.read().decode("utf-8", errors="replace"))
+                            if res_data.get("ok") or res_data.get("status") in ("done", "error"):
+                                break
+                    except Exception as e:
+                        print(f"[hermes-bridge] Background job execution attempt {attempt+1} error: {e}", flush=True)
+                        time.sleep(2)
+
+            threading.Thread(target=_orchestrate_job, daemon=True).start()
+            return self._send(200, {"ok": True, "dispatched": True, "job_id": job_payload.get("turnId")})
+
         self._send(404, {"error": f"Unknown route {self.path}"})
 
 
@@ -442,6 +504,21 @@ def push_heartbeat():
                 s_txt = SOUL_MD.read_text(encoding="utf-8", errors="replace") if SOUL_MD.exists() else ""
                 m_txt = MEMORY_MD.read_text(encoding="utf-8", errors="replace") if MEMORY_MD.exists() else ""
                 u_txt = USER_MD.read_text(encoding="utf-8", errors="replace") if USER_MD.exists() else ""
+                ct_path = HERMES_HOME / "custom_tools.json"
+                mcp_path = HERMES_HOME / "mcp.json"
+                custom_tools_data = {}
+                mcp_servers_data = {}
+                if ct_path.exists():
+                    try:
+                        custom_tools_data = json.loads(ct_path.read_text(encoding="utf-8"))
+                    except Exception:
+                        pass
+                if mcp_path.exists():
+                    try:
+                        mcp_raw = json.loads(mcp_path.read_text(encoding="utf-8"))
+                        mcp_servers_data = mcp_raw.get("mcpServers", mcp_raw) if isinstance(mcp_raw, dict) else {}
+                    except Exception:
+                        pass
                 payload = {
                     "tunnel_url": STATE["tunnel_url"],
                     "bridge_secret": BRIDGE_SECRET,
@@ -450,6 +527,8 @@ def push_heartbeat():
                     "services": health["services"],
                     "health": health,
                     "skills": list_all_skills(),
+                    "custom_tools": custom_tools_data,
+                    "mcp_servers": mcp_servers_data,
                     "soul_md": s_txt,
                     "memory_md": m_txt,
                     "user_md": u_txt,

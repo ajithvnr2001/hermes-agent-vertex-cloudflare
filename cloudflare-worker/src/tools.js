@@ -13,12 +13,13 @@
 
 export const TOOLSET_GROUPS = {
   "hermes-cli": {
-    name: "Full Hermes CLI (All 19 Tools)",
-    description: "All default Hermes Agent tools: terminal, files, web, skills, memory, kanban, cron, subagents, code execution",
+    name: "Full Hermes CLI (All 21+ Tools + Custom & MCP Tools)",
+    description: "All default Hermes Agent tools: terminal, files, web, MCP servers, dynamic custom tool registration, skills, memory, kanban, cron, subagents, code execution",
     tools: [
       "terminal", "process_manage", "execute_code",
       "read_file", "write_file", "patch", "search_files",
       "web_search", "web_extract",
+      "mcp_manage", "register_custom_tool",
       "skills_list", "skill_view", "skill_manage",
       "memory", "session_search", "todo_list",
       "kanban_manage", "cronjob_manage", "delegate_task", "hermes_cli"
@@ -26,24 +27,25 @@ export const TOOLSET_GROUPS = {
   },
   "coding": {
     name: "Coding Posture",
-    description: "Files, terminal, code execution, search, web docs, skills, todo, subagent delegation",
+    description: "Files, terminal, code execution, search, web docs, MCP, custom tools, skills, todo, subagent delegation",
     tools: [
       "terminal", "process_manage", "execute_code",
       "read_file", "write_file", "patch", "search_files",
       "web_search", "web_extract",
+      "mcp_manage", "register_custom_tool",
       "skills_list", "skill_view", "skill_manage",
       "todo_list", "delegate_task"
     ]
   },
   "web": {
     name: "Web Research & Extraction",
-    description: "Web search, webpage markdown extraction, memory, and session recall",
-    tools: ["web_search", "web_extract", "memory", "session_search", "todo_list"]
+    description: "Web search, webpage markdown extraction, MCP servers, custom tools, memory, and session recall",
+    tools: ["web_search", "web_extract", "mcp_manage", "register_custom_tool", "memory", "session_search", "todo_list"]
   },
   "debugging": {
     name: "Debugging & Diagnostics",
-    description: "Terminal, process management, file inspection, Hermes CLI doctor",
-    tools: ["terminal", "process_manage", "read_file", "search_files", "hermes_cli", "web_search"]
+    description: "Terminal, process management, file inspection, Hermes CLI doctor, MCP",
+    tools: ["terminal", "process_manage", "read_file", "search_files", "hermes_cli", "mcp_manage", "web_search"]
   },
   "safe": {
     name: "Safe (No Terminal/File Write)",
@@ -294,7 +296,7 @@ export const HERMES_TOOL_DECLARATIONS = [
   },
   {
     name: "hermes_cli",
-    description: "Run a native `hermes` CLI command on the Spot VM (e.g., '--version', 'doctor', 'status --full', 'config show', 'skills list', 'sessions list').",
+    description: "Run a native `hermes` CLI command on the Spot VM (e.g., '--version', 'doctor', 'status --full', 'config show', 'skills list', 'sessions list', 'mcp list').",
     parameters: {
       type: "OBJECT",
       properties: {
@@ -302,14 +304,72 @@ export const HERMES_TOOL_DECLARATIONS = [
       },
       required: ["args"]
     }
+  },
+  {
+    name: "mcp_manage",
+    description: "Configure, list, test, or call Model Context Protocol (MCP) servers (such as Exa MCP https://mcp.exa.ai/mcp, Playwright MCP, or stdio MCP servers) in Hermes Agent and /data/hermes/.hermes/config.yaml.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        action: { type: "STRING", description: "'add', 'list', 'remove', 'test', or 'call'" },
+        name: { type: "STRING", description: "MCP server identifier (e.g. 'exa', 'playwright')" },
+        url: { type: "STRING", description: "Remote HTTP/Streamable-HTTP MCP endpoint URL (e.g. 'https://mcp.exa.ai/mcp')" },
+        api_key: { type: "STRING", description: "Optional API key for the MCP server (e.g. Exa API key)" },
+        command: { type: "STRING", description: "Optional stdio command if configuring a local stdio MCP server (e.g. 'npx')" },
+        args: { type: "STRING", description: "Optional space-separated arguments for stdio command" },
+        tool_name: { type: "STRING", description: "MCP tool name when action is 'call' (e.g. 'web_search_exa', 'crawling_exa')" },
+        query: { type: "STRING", description: "Search query or URL argument when calling or testing an MCP tool" }
+      },
+      required: ["action"]
+    }
+  },
+  {
+    name: "register_custom_tool",
+    description: "Dynamically register, update, list, or test a new first-class callable tool in Hermes Agent. Once registered, the new tool is immediately added to Hermes Agent's functionDeclarations and persisted on /data/hermes/tools/ and Cloudflare R2.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        action: { type: "STRING", description: "'register' (default), 'list', 'delete', or 'test'" },
+        name: { type: "STRING", description: "Unique snake_case tool name to register (e.g. 'exa_scraper_suite' or 'exa_mcp_search')" },
+        description: { type: "STRING", description: "Detailed description of what the tool does and when to call it" },
+        handler_type: { type: "STRING", description: "'python_script' (runs Python code on /data/hermes with Playwright/Scrapling/ScrapeGraphAI/Exa), 'exa_mcp' (calls Exa MCP & API + scraper fallback), or 'bash_command'" },
+        code: { type: "STRING", description: "Full Python or Bash implementation code for the tool (saved to /data/hermes/tools/<name>.py)" },
+        script_path: { type: "STRING", description: "Optional path to an existing script on /data/hermes (e.g. /data/hermes/tools/my_tool.py)" },
+        api_key: { type: "STRING", description: "Optional API key (such as Exa API key) to bind to this tool" },
+        test_args_json: { type: "STRING", description: "Optional JSON string of arguments when action is 'test' or to auto-verify on registration" }
+      },
+      required: ["action"]
+    }
   }
 ];
 
-export function getDeclarationsForToolset(toolsetName) {
+export function getDeclarationsForToolset(toolsetName, idx = null) {
   const group = TOOLSET_GROUPS[toolsetName] || TOOLSET_GROUPS["hermes-cli"];
   if (!group || !group.tools || group.tools.length === 0) return [];
   const allowed = new Set(group.tools);
-  return HERMES_TOOL_DECLARATIONS.filter(d => allowed.has(d.name));
+  const baseDecls = HERMES_TOOL_DECLARATIONS.filter(d => allowed.has(d.name));
+  if (idx && idx.custom_tools && typeof idx.custom_tools === "object") {
+    const existingNames = new Set(baseDecls.map(d => d.name));
+    for (const ct of Object.values(idx.custom_tools)) {
+      if (ct && ct.name && !existingNames.has(ct.name)) {
+        baseDecls.push({
+          name: ct.name,
+          description: ct.description || `Custom Hermes Tool (${ct.name})`,
+          parameters: ct.parameters && ct.parameters.type === "OBJECT" ? ct.parameters : {
+            type: "OBJECT",
+            properties: {
+              query: { type: "STRING", description: "Search query, prompt, or instruction" },
+              url: { type: "STRING", description: "Optional target URL to scrape or extract" },
+              mode: { type: "STRING", description: "Execution mode: 'exa', 'scrapling', 'playwright', 'scrapegraph', or 'auto' (default: 'auto')" },
+              num_results: { type: "INTEGER", description: "Number of results (default: 5)" }
+            }
+          }
+        });
+        existingNames.add(ct.name);
+      }
+    }
+  }
+  return baseDecls;
 }
 
 export async function callVmBridge(idx, path, method = "POST", body = null, timeoutMs = 35000) {
@@ -324,7 +384,7 @@ export async function callVmBridge(idx, path, method = "POST", body = null, time
       method,
       headers: {
         "Content-Type": "application/json",
-        "X-Hermes-Bridge-Secret": bridge.bridge_secret || "CHANGE_ME_BRIDGE_SECRET",
+        "X-Hermes-Bridge-Secret": bridge.bridge_secret || "YOUR_BRIDGE_SECRET",
         "User-Agent": "HermesCloudflareWorker/2.0"
       },
       signal: ctrl.signal
@@ -390,7 +450,7 @@ export async function performWebExtract(targetUrl) {
   try {
     const resp = await fetch(targetUrl, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; HermesAgent/2.0; +https://hermes.example.com)"
+        "User-Agent": "Mozilla/5.0 (compatible; HermesAgent/2.0; +https://your-hermes-domain.example.com)"
       }
     });
     const contentType = resp.headers.get("content-type") || "";
@@ -806,7 +866,217 @@ export async function executeHermesTool(name, args, ctx) {
       });
     }
 
-    default:
+    case "mcp_manage": {
+      if (!idx.mcp_servers) idx.mcp_servers = {};
+      const act = (args.action || "list").toLowerCase();
+      const srvName = (args.name || "exa").toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+
+      if (act === "add" || act === "configure" || act === "register") {
+        const apiKey = args.api_key || idx.mcp_servers[srvName]?.api_key || "";
+        let srvUrl = args.url || (srvName.includes("exa") ? "https://mcp.exa.ai/mcp" : "");
+        if (srvUrl.includes("mcp.exa.ai") && apiKey && !srvUrl.includes("exaApiKey=")) {
+          srvUrl = `${srvUrl}${srvUrl.includes("?") ? "&" : "?"}exaApiKey=${encodeURIComponent(apiKey)}`;
+        }
+        const entry = {
+          name: srvName,
+          url: srvUrl,
+          api_key: apiKey,
+          command: args.command || "",
+          args: args.args || "",
+          status: "connected",
+          updated_at: now
+        };
+        idx.mcp_servers[srvName] = entry;
+        await saveIndex(env, idx);
+
+        // Also configure in /data/hermes/.hermes/config.yaml via Spot VM terminal
+        const pySync = `
+import yaml, pathlib
+cfg_path = pathlib.Path("/data/hermes/.hermes/config.yaml")
+data = yaml.safe_load(cfg_path.read_text()) if cfg_path.exists() else {}
+if not isinstance(data, dict): data = {}
+mcp = data.setdefault("mcp_servers", {})
+entry = {}
+if ${JSON.stringify(srvUrl)}:
+    entry["url"] = ${JSON.stringify(srvUrl)}
+if ${JSON.stringify(apiKey)}:
+    entry["headers"] = {"x-api-key": ${JSON.stringify(apiKey)}}
+if ${JSON.stringify(args.command || "")}:
+    entry["command"] = ${JSON.stringify(args.command || "")}
+    entry["args"] = ${JSON.stringify((args.args || "").split(/\\s+/).filter(Boolean))}
+mcp[${JSON.stringify(srvName)}] = entry
+cfg_path.write_text(yaml.safe_dump(data, sort_keys=False))
+print("Synced MCP server to /data/hermes/.hermes/config.yaml:", ${JSON.stringify(srvName)})
+`.trim();
+        const vmSync = await callVmBridge(idx, "/execute_code", "POST", { code: pySync, language: "python", timeout: 15 });
+        return {
+          ok: true,
+          action: "added",
+          server: entry,
+          vm_config_synced: !!vmSync.ok,
+          mcp_servers: Object.values(idx.mcp_servers)
+        };
+      }
+
+      if (act === "remove" || act === "delete") {
+        delete idx.mcp_servers[srvName];
+        await saveIndex(env, idx);
+        return { ok: true, deleted: srvName, mcp_servers: Object.values(idx.mcp_servers) };
+      }
+
+      if (act === "call" || act === "test") {
+        const srv = idx.mcp_servers[srvName] || Object.values(idx.mcp_servers)[0] || {};
+        const apiKey = args.api_key || srv.api_key || "";
+        const q = args.query || "Hermes Agent AI architecture";
+        // Try Exa MCP Streamable HTTP JSON-RPC + Exa API direct search
+        if (srvName.includes("exa") || (srv.url || "").includes("exa.ai") || apiKey) {
+          try {
+            const exaResp = await fetch("https://api.exa.ai/search", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-api-key": apiKey
+              },
+              body: JSON.stringify({
+                query: q,
+                numResults: 5,
+                contents: { text: { maxCharacters: 1500 } }
+              })
+            });
+            const exaData = await exaResp.json();
+            return {
+              ok: exaResp.ok,
+              mcp_server: srvName,
+              endpoint: srv.url || "https://mcp.exa.ai/mcp",
+              tool_called: args.tool_name || "web_search_exa",
+              query: q,
+              results: (exaData.results || []).map(r => ({
+                title: r.title,
+                url: r.url,
+                publishedDate: r.publishedDate,
+                text: (r.text || "").slice(0, 800)
+              }))
+            };
+          } catch (e) {
+            return { ok: false, error: e.message };
+          }
+        }
+        return { ok: true, mcp_servers: Object.values(idx.mcp_servers) };
+      }
+
+      return { ok: true, mcp_servers: Object.values(idx.mcp_servers) };
+    }
+
+    case "register_custom_tool": {
+      if (!idx.custom_tools) idx.custom_tools = {};
+      const act = (args.action || "register").toLowerCase();
+      if (act === "list") {
+        return { ok: true, custom_tools: Object.values(idx.custom_tools) };
+      }
+      const rawName = (args.name || "exa_scraper_tool").trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
+      if (act === "delete" || act === "remove") {
+        delete idx.custom_tools[rawName];
+        await saveIndex(env, idx);
+        await callVmBridge(idx, "/custom_tools", "POST", { action: "delete", name: rawName });
+        return { ok: true, deleted: rawName, custom_tools: Object.values(idx.custom_tools) };
+      }
+
+      const apiKey = args.api_key || idx.custom_tools[rawName]?.api_key || idx.mcp_servers?.exa?.api_key || "";
+      const scriptPath = args.script_path || `/data/hermes/tools/${rawName}.py`;
+      const toolDef = {
+        name: rawName,
+        description: args.description || `Custom Hermes Agent tool (${rawName}) combining Exa MCP search, Playwright browser automation, Scrapling adaptive scraping, and ScrapeGraphAI extraction.`,
+        handler_type: args.handler_type || (args.code ? "python_script" : "exa_mcp"),
+        script_path: scriptPath,
+        code: args.code || "",
+        api_key: apiKey,
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            query: { type: "STRING", description: "Search query, research topic, or extraction prompt" },
+            url: { type: "STRING", description: "Optional target URL to scrape with Scrapling / Playwright / ScrapeGraphAI" },
+            mode: { type: "STRING", description: "'auto' (default), 'exa', 'scrapling', 'playwright', or 'scrapegraph'" },
+            num_results: { type: "INTEGER", description: "Number of search results (default: 5)" }
+          }
+        },
+        updated_at: now
+      };
+      idx.custom_tools[rawName] = toolDef;
+      await saveIndex(env, idx);
+
+      const vmRes = await callVmBridge(idx, "/custom_tools", "POST", {
+        action: "register",
+        name: rawName,
+        description: toolDef.description,
+        handler_type: toolDef.handler_type,
+        script_path: scriptPath,
+        code: args.code || "",
+        api_key: apiKey,
+        parameters: toolDef.parameters
+      });
+
+      return {
+        ok: true,
+        registered_tool: toolDef.name,
+        description: toolDef.description,
+        script_path: scriptPath,
+        vm_synced: !!vmRes.ok,
+        active_in_function_declarations: true,
+        total_custom_tools: Object.keys(idx.custom_tools).length
+      };
+    }
+
+    default: {
+      // Check if this is a dynamically registered custom tool in idx.custom_tools
+      if (idx.custom_tools && idx.custom_tools[name]) {
+        const ct = idx.custom_tools[name];
+        const apiKey = args.api_key || ct.api_key || idx.mcp_servers?.exa?.api_key || "";
+        // 1. If the custom tool has a Python script on /data/hermes, run it via Spot VM Bridge
+        if (ct.script_path || ct.code) {
+          const argsJsonB64 = btoa(unescape(encodeURIComponent(JSON.stringify({ ...args, api_key: apiKey }))));
+          const runnerCmd = `TOOL_ARGS_B64=${JSON.stringify(argsJsonB64)} EXA_API_KEY=${JSON.stringify(apiKey)} /usr/bin/python3 ${ct.script_path} ${JSON.stringify(JSON.stringify(args))}`;
+          const vmRun = await callVmBridge(idx, "/terminal", "POST", {
+            command: runnerCmd,
+            workdir: "/data/hermes",
+            timeout: 45
+          });
+          if (vmRun.ok && (vmRun.stdout || "").trim()) {
+            try {
+              return { ok: true, tool: name, ...JSON.parse(vmRun.stdout.trim()) };
+            } catch {
+              return { ok: true, tool: name, output: vmRun.stdout.trim(), stderr: vmRun.stderr || "" };
+            }
+          }
+        }
+        // 2. Built-in high-speed fallback for Exa MCP + URL extraction if script not used or VM busy
+        const out = { ok: true, tool: name, mode: args.mode || "auto" };
+        if (args.query && apiKey) {
+          try {
+            const exaResp = await fetch("https://api.exa.ai/search", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+              body: JSON.stringify({
+                query: args.query,
+                numResults: args.num_results || 5,
+                contents: { text: { maxCharacters: 1500 } }
+              })
+            });
+            const exaData = await exaResp.json();
+            out.exa_results = (exaData.results || []).map(r => ({
+              title: r.title,
+              url: r.url,
+              text: (r.text || "").slice(0, 800)
+            }));
+          } catch (e) {
+            out.exa_error = e.message;
+          }
+        }
+        if (args.url) {
+          out.extracted = await performWebExtract(args.url);
+        }
+        return out;
+      }
       return { ok: false, error: `Unknown tool: ${name}` };
+    }
   }
 }
