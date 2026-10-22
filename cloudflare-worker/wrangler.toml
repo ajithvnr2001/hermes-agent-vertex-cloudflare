@@ -1,34 +1,10 @@
-name = "hermes-agent"
+name = "hermes-agent-web"
 main = "src/index.js"
-compatibility_date = "2025-01-01"
-workers_dev = true
+compatibility_date = "2024-11-01"
 
-# Optional: Replace with your Cloudflare custom domain, or comment out `routes` to use your *.workers.dev URL
 routes = [
-  { pattern = "hermes.example.com", custom_domain = true }
+  { pattern = "hermes.your-domain.com/*", zone_name = "your-domain.com" }
 ]
 
-[[r2_buckets]]
-binding = "STORAGE"
-bucket_name = "hermes-agent-storage"
-
-[[kv_namespaces]]
-binding = "HERMES_KV"
-id = "YOUR_KV_NAMESPACE_ID"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "hermes-agent-db"
-database_id = "YOUR_D1_DATABASE_ID"
-
 [vars]
-VERTEX_PROJECT_ID = "your-gcp-project-id"
-VERTEX_LOCATION = "global"
-DEFAULT_MODEL = "gemini-3.8-flash"
-AUTH_USERNAME = "admin@example.com"
-
-# Set sensitive secrets via Wrangler CLI (never commit real secrets):
-#   Option A (Vertex AI API Key):        npx wrangler secret put VERTEX_API_KEY
-#   Option B (GCP Service Account JSON): npx wrangler secret put GCP_SA_KEY < /tmp/gcp-sa-key.json
-#   Web UI Owner Password:               npx wrangler secret put AUTH_PASSWORD
-#   Spot VM Bridge Shared Secret:        npx wrangler secret put BRIDGE_SECRET
+ORIGIN = "https://your-quick-tunnel.trycloudflare.com"

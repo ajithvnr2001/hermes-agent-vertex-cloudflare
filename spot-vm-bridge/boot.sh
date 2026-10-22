@@ -1,77 +1,57 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # /data/hermes/boot.sh — Automatic Spot VM Reallocation & Reboot Recovery
-# Restores all Hermes Agent symlinks, CLI binaries, and systemd services from /data
+# Restores all Hermes Agent symlinks, configs, and systemd services from /data
 # ==============================================================================
 set -e
 
-HERMES_DATA_DIR="${HERMES_DATA_DIR:-/data/hermes}"
-echo "[hermes-boot] Restoring Hermes Agent from persistent disk ${HERMES_DATA_DIR}..."
+echo "[hermes-boot] Restoring Hermes Agent from persistent disk /data/hermes..."
 
-mkdir -p "${HERMES_DATA_DIR}/storage/sessions" \
-         "${HERMES_DATA_DIR}/logs" \
-         /root/.local/bin /root/.config /usr/local/bin /data/bin
+mkdir -p /data/hermes/storage/sessions /data/hermes/.cache/ms-playwright /root/.local/bin /root/.config /root/.cache /usr/local/bin /data/bin
+if [ ! -L /root/.cache/ms-playwright ]; then
+  rm -rf /root/.cache/ms-playwright
+  ln -sfn /data/hermes/.cache/ms-playwright /root/.cache/ms-playwright
+fi
 
 # 1. Restore directory symlinks
 if [ ! -L /root/.hermes ]; then
   rm -rf /root/.hermes
-  ln -s "${HERMES_DATA_DIR}/.hermes" /root/.hermes
+  ln -s /data/hermes/.hermes /root/.hermes
 fi
-for user_dir in /home/*; do
-  if [ -d "$user_dir" ]; then
-    ln -sfn "${HERMES_DATA_DIR}/.hermes" "${user_dir}/.hermes" 2>/dev/null || true
-  fi
-done
+ln -sfn /data/hermes/.hermes /home/azureuser/.hermes 2>/dev/null || true
 
-if [ -d "${HERMES_DATA_DIR}/hermes-cloudflare-web" ] && [ ! -L /root/hermes-cloudflare-web ]; then
+if [ ! -L /root/hermes-cloudflare-web ]; then
   rm -rf /root/hermes-cloudflare-web
-  ln -s "${HERMES_DATA_DIR}/hermes-cloudflare-web" /root/hermes-cloudflare-web
+  ln -s /data/hermes/hermes-cloudflare-web /root/hermes-cloudflare-web
 fi
 
-if [ -d "${HERMES_DATA_DIR}/.wrangler" ]; then
-  if [ ! -L /root/.wrangler ]; then
-    rm -rf /root/.wrangler
-    ln -s "${HERMES_DATA_DIR}/.wrangler" /root/.wrangler
-  fi
-  ln -sfn "${HERMES_DATA_DIR}/.wrangler" /root/.config/.wrangler
+if [ ! -L /root/.wrangler ]; then
+  rm -rf /root/.wrangler
+  ln -s /data/hermes/.wrangler /root/.wrangler
 fi
+ln -sfn /data/hermes/.wrangler /root/.config/.wrangler
 
-# 2. Dynamically locate and restore Hermes CLI virtualenv symlinks
-mkdir -p "${HERMES_DATA_DIR}/.hermes/hermes-agent"
-if [ ! -x "${HERMES_DATA_DIR}/.hermes/hermes-agent/venv/bin/hermes" ]; then
-  DETECTED_VENV=$(find "${HERMES_DATA_DIR}/.hermes" -maxdepth 5 -type d -name "venv" 2>/dev/null | head -n 1 || true)
-  if [ -n "$DETECTED_VENV" ]; then
-    ln -sfn "$DETECTED_VENV" "${HERMES_DATA_DIR}/.hermes/hermes-agent/venv"
-    DETECTED_WS="$(dirname "$DETECTED_VENV")/workspace/hermes_cli"
-    if [ -d "$DETECTED_WS" ] && [ -d "${HERMES_DATA_DIR}/.hermes/hermes-agent/hermes_cli/web_dist" ]; then
-      ln -sfn "${HERMES_DATA_DIR}/.hermes/hermes-agent/hermes_cli/web_dist" "${DETECTED_WS}/web_dist"
-    fi
-  fi
-fi
-
-chmod +x "${HERMES_DATA_DIR}/.hermes/hermes-agent/venv/bin/hermes" \
-         "${HERMES_DATA_DIR}/sync_to_data.py" \
-         "${HERMES_DATA_DIR}/vm_bridge.py" \
-         /data/bin/cloudflared 2>/dev/null || true
-
+# 2. Restore CLI binary symlinks and workspace links
+WS_DIR="/data/hermes/.hermes/installs/8a4017c4cabfe15f/environments/5b3526e22336490dac2bb79381a4c7af/workspace"
+HA_DIR="/data/hermes/.hermes/hermes-agent"
+ln -sfn /data/hermes/.hermes/installs/8a4017c4cabfe15f/environments/5b3526e22336490dac2bb79381a4c7af/venv "$HA_DIR/venv"
+ln -sfn "$HA_DIR/hermes_cli/web_dist" "$WS_DIR/hermes_cli/web_dist"
+for item in ui-tui node_modules web package.json package-lock.json .git; do
+  [ -e "$HA_DIR/$item" ] && [ ! -e "$WS_DIR/$item" ] && ln -sfn "$HA_DIR/$item" "$WS_DIR/$item" || true
+done
+chmod +x /data/hermes/.hermes/hermes-agent/venv/bin/hermes /data/hermes/start-tunnel.sh /data/bin/cloudflared 2>/dev/null || true
 ln -sfn /data/bin/cloudflared /usr/local/bin/cloudflared 2>/dev/null || true
-if [ -x "${HERMES_DATA_DIR}/.hermes/hermes-agent/venv/bin/hermes" ]; then
-  ln -sfn "${HERMES_DATA_DIR}/.hermes/hermes-agent/venv/bin/hermes" /data/bin/hermes
-  ln -sfn "${HERMES_DATA_DIR}/.hermes/hermes-agent/venv/bin/hermes" /usr/local/bin/hermes
-  ln -sfn "${HERMES_DATA_DIR}/.hermes/hermes-agent/venv/bin/hermes" /root/.local/bin/hermes
-fi
+ln -sfn /data/hermes/.hermes/hermes-agent/venv/bin/hermes /data/bin/hermes
+ln -sfn /data/hermes/.hermes/hermes-agent/venv/bin/hermes /usr/local/bin/hermes
+ln -sfn /data/hermes/.hermes/hermes-agent/venv/bin/hermes /root/.local/bin/hermes
 
 # 3. Install and start systemd services
-for svc in hermes-dashboard.service hermes-sync.service hermes-bridge.service; do
-  if [ -f "${HERMES_DATA_DIR}/${svc}" ]; then
-    cp -f "${HERMES_DATA_DIR}/${svc}" "/etc/systemd/system/${svc}"
-  elif [ -f "${HERMES_DATA_DIR}/systemd/${svc}" ]; then
-    cp -f "${HERMES_DATA_DIR}/systemd/${svc}" "/etc/systemd/system/${svc}"
-  fi
-done
-
+cp -f /data/hermes/hermes-dashboard.service /etc/systemd/system/hermes-dashboard.service
+cp -f /data/hermes/hermes-bridge.service /etc/systemd/system/hermes-bridge.service
+systemctl stop hermes-sync.service 2>/dev/null || true
+systemctl disable hermes-sync.service 2>/dev/null || true
 systemctl daemon-reload
-systemctl enable hermes-dashboard.service hermes-sync.service hermes-bridge.service 2>/dev/null || true
-systemctl restart hermes-dashboard.service hermes-sync.service hermes-bridge.service 2>/dev/null || true
+systemctl enable hermes-dashboard.service hermes-bridge.service
+systemctl restart hermes-dashboard.service hermes-bridge.service
 
-echo "[hermes-boot] Hermes Agent services active and synced on ${HERMES_DATA_DIR}."
+echo "[hermes-boot] Native Hermes Agent Web Dashboard active on 127.0.0.1:9119 and routed to hermes.rpcserve.website."

@@ -1,17 +1,16 @@
 [Unit]
-Description=Hermes Agent Spot VM Bridge & Cloudflared Tunnel (/data/hermes)
-After=network-online.target local-fs.target
-Wants=network-online.target
+Description=Hermes Agent Web Dashboard Tunnel -> hermes.rpcserve.website (/data/hermes)
+After=network-online.target local-fs.target hermes-dashboard.service
+Wants=network-online.target hermes-dashboard.service
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/data/hermes
-EnvironmentFile=-/data/hermes/.env
 Environment="HOME=/root"
 Environment="HERMES_HOME=/data/hermes/.hermes"
 Environment="PATH=/data/hermes/.hermes/hermes-agent/venv/bin:/data/bin:/usr/local/bin:/usr/bin:/bin"
-ExecStart=/usr/bin/python3 /data/hermes/vm_bridge.py
+ExecStart=/usr/bin/env bash /data/hermes/start-tunnel.sh
 Restart=always
 RestartSec=3
 
