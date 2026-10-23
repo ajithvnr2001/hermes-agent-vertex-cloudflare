@@ -1,0 +1,366 @@
+_config_version: 51
+database:
+  journal_mode: wal
+runtime:
+  nofile_soft_limit: 4096
+attachments:
+  storage: hermes-home
+plugins:
+  clone_timeout_seconds: 300
+model:
+  default: google/gemini-4-argon
+  provider: vertex
+  api_mode: chat_completions
+  base_url: https://aiplatform.googleapis.com/v1beta1/projects/genai-512407/locations/global/endpoints/openapi
+tools:
+  tool_search:
+    enabled: "off"
+    defer: []
+vertex:
+  project_id: genai-512407
+  region: global
+kanban:
+  review_dispatch: true
+cron:
+  catch_up_missed: true
+terminal:
+  backend: local
+  cwd: .
+  timeout: 180
+  home_mode: auto
+  docker_mount_cwd_to_workspace: false
+  lifetime_seconds: 300
+  process_wait_auto_notify: true
+  client_env_passthrough: []
+  container_cpu: 1
+  container_memory: 5120
+  container_disk: 51200
+  container_persistent: true
+browser:
+  inactivity_timeout: 120
+  extension_control:
+    enabled: false
+tool_loop_guardrails:
+  warnings_enabled: true
+  hard_stop_enabled: false
+  non_interactive_hard_stop_enabled: true
+  warn_after:
+    exact_failure: 2
+    same_tool_failure: 3
+    idempotent_no_progress: 2
+  hard_stop_after:
+    exact_failure: 5
+    same_tool_failure: 8
+    idempotent_no_progress: 5
+compression:
+  enabled: true
+  checkpoint_required: false
+  progress_notices: false
+  threshold: 0.1
+  threshold_tokens: 90000
+  codex_gpt55_autoraise: true
+  target_ratio: 0.2
+  protect_last_n: 12
+  min_tail_user_messages: 1
+  max_attempts: 3
+  codex_app_server_auto: native
+  codex_responses_native: false
+  codex_responses_compact_threshold: 200000
+  protect_first_n: 3
+  idle_compact_after_seconds: 120
+  hygiene_max_turn_hold_seconds: 10
+  proactive_prune_tokens: 36000
+  proactive_prune_min_result_chars: 3000
+  proactive_prune_min_reclaim_tokens: 2000
+  summary_model: deepseek-ai/DeepSeek-V4.1-Flash
+  summary_provider: custom
+  summary_base_url: https://api.river.ai/v1
+  summary_api_key: ${RIVER_API_KEY}
+prompt_caching:
+  cache_ttl: 5m
+memory:
+  memory_enabled: true
+  user_profile_enabled: true
+  prefetch_spill_enabled: false
+  memory_char_limit: 2200
+  user_char_limit: 1375
+  nudge_interval: 25
+max_concurrent_sessions:
+group_sessions_per_user: true
+streaming:
+  enabled: false
+skills:
+  creation_nudge_interval: 30
+agent:
+  max_turns: 500
+  verbose: false
+  reasoning_effort: medium
+  service_tier: ''
+  fast_auto_seconds: 60
+  api_max_retries: 4
+  auto_recovery_cycles: 5
+  personalities: {}
+auxiliary:
+  compression:
+    provider: custom
+    model: deepseek-ai/DeepSeek-V4.1-Flash
+    base_url: https://api.river.ai/v1
+    api_key: ${RIVER_API_KEY}
+    timeout: 120
+  background_review:
+    provider: custom
+    model: deepseek-ai/DeepSeek-V4.1-Flash
+    base_url: https://api.river.ai/v1
+    api_key: ${RIVER_API_KEY}
+    timeout: 90
+  session_search:
+    provider: custom
+    model: deepseek-ai/DeepSeek-V4.1-Flash
+    base_url: https://api.river.ai/v1
+    api_key: ${RIVER_API_KEY}
+    timeout: 30
+  skills_hub:
+    provider: custom
+    model: deepseek-ai/DeepSeek-V4.1-Flash
+    base_url: https://api.river.ai/v1
+    api_key: ${RIVER_API_KEY}
+    timeout: 30
+  approval:
+    provider: custom
+    model: deepseek-ai/DeepSeek-V4.1-Flash
+    base_url: https://api.river.ai/v1
+    api_key: ${RIVER_API_KEY}
+    timeout: 30
+  mcp:
+    provider: custom
+    model: deepseek-ai/DeepSeek-V4.1-Flash
+    base_url: https://api.river.ai/v1
+    api_key: ${RIVER_API_KEY}
+    timeout: 30
+  flush_memories:
+    provider: custom
+    model: deepseek-ai/DeepSeek-V4.1-Flash
+    base_url: https://api.river.ai/v1
+    api_key: ${RIVER_API_KEY}
+    timeout: 30
+gateway:
+  unmanaged_idle_exit_seconds: 600
+  signal_interrupt_grace_timeout: 1
+  service_install_choice: install
+  delivery_ledger: true
+  platform_connect_timeout: 30
+  loop_watchdog: true
+  loop_watchdog_probe_interval_s: 30.0
+  loop_watchdog_probe_timeout_s: 10.0
+  loop_watchdog_max_strikes: 3
+  allow_all_users: false
+  bot_loop_guard:
+    enabled: true
+    max_events: 20
+    window_seconds: 300
+    cooldown_seconds: 600
+  startup_watchdog: true
+  startup_watchdog_timeout_seconds: 300
+  write_sessions_json: true
+  multiplex_profiles: true
+  auto_multiplex_migration: true
+  profile_routes: []
+  scale_to_zero:
+    idle_timeout_minutes: 2
+  restart_loop_guard:
+    max_restarts: 3
+    window_seconds: 60
+    max_gap_seconds: 300
+  respawn_storm:
+    max_starts: 5
+    window_seconds: 120
+  message_timestamps:
+    enabled: false
+  max_inbound_media_bytes: 134217728
+  trust_env: true
+  strict: false
+  media_delivery_allow_dirs: []
+  trust_recent_files: true
+  trust_recent_files_seconds: 600
+  api_server:
+    max_concurrent_runs: 10
+    history_tool_output_max_chars: 0
+platform_toolsets:
+  cli:
+    - hermes-cli
+  telegram:
+    - hermes-telegram
+  discord:
+    - hermes-discord
+  whatsapp:
+    - hermes-whatsapp
+  slack:
+    - hermes-slack
+  signal:
+    - hermes-signal
+  qqbot:
+    - hermes-qqbot
+  yuanbao:
+    - hermes-yuanbao
+  teams:
+    - hermes-teams
+  google_chat:
+    - hermes-google_chat
+stt:
+  enabled: true
+  local:
+    model: base
+  language: en
+  openai:
+    model: whisper-1
+    language: ''
+    timeout: 60
+    max_retries: 1
+code_execution:
+  timeout: 300
+  max_tool_calls: 50
+delegation:
+  max_iterations: 250
+display:
+  compact: false
+  cleanup_progress: false
+  suppress_warning_notifications: false
+  busy_input_mode: interrupt
+  background_process_notifications: concise
+  bell_on_complete: false
+  bell_on_prompt: false
+  streaming: true
+  skin: default
+telemetry:
+  shared_metrics:
+    enabled: false
+    send: false
+    offer_version: 2
+auth:
+  adopt_external_logins: true
+  codex_login_flow: device_code
+updates:
+  check: true
+  pre_update_backup: false
+  backup_keep: 5
+  non_interactive_local_changes: stash
+mcp_servers:
+  exa:
+    url: https://mcp.exa.ai/mcp?exaApiKey=${EXA_API_KEY}
+    headers:
+      x-api-key: ${EXA_API_KEY}
+platforms:
+  telegram:
+    enabled: true
+command_allowlist:
+  - script execution via -e/-c flag
+moa:
+  presets:
+    default:
+      reference_models:
+        - provider: vertex
+          model: google/gemini-4-argon
+          enabled: true
+        - provider: vertex
+          model: google/gemini-4-argon
+          enabled: true
+      degraded_reference_policy: loud
+      fanout: user_turn
+      aggregator:
+        provider: vertex
+        model: google/gemini-4-argon
+  reference_models:
+    - provider: vertex
+      model: google/gemini-4-argon
+      enabled: true
+    - provider: vertex
+      model: google/gemini-4-argon
+      enabled: true
+  aggregator:
+    provider: vertex
+    model: google/gemini-4-argon
+  degraded_reference_policy: loud
+  fanout: user_turn
+  enabled: true
+onboarding:
+  seen:
+    busy_input_prompt: true
+providers:
+  river:
+    name: River AI
+    api: https://api.river.ai/v1
+    base_url: https://api.river.ai/v1
+    api_key: ${RIVER_API_KEY}
+    key_env: RIVER_API_KEY
+    api_mode: chat_completions
+    default_model: deepseek-ai/DeepSeek-V4.1-Flash
+    discover_models: true
+    models_discovered: true
+    context_length: 131072
+    models:
+      deepseek-ai/DeepSeek-V4.1-Flash:
+        context_length: 131072
+      deepseek-ai/DeepSeek-V4.1-Flash-1017:
+        context_length: 131072
+      zai-org/GLM-5.3-Flash:
+        context_length: 131072
+      nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4:
+        context_length: 131072
+      Qwen/Qwen3.8-27B-FP8:
+        context_length: 131072
+fallback_providers:
+  - provider: river
+    model: deepseek-ai/DeepSeek-V4.1-Flash
+    base_url: https://api.river.ai/v1
+    key_env: RIVER_API_KEY
+    api_key: ${RIVER_API_KEY}
+    api_mode: chat_completions
+    reasoning_echo: true
+  - provider: river
+    model: zai-org/GLM-5.3-Flash
+    base_url: https://api.river.ai/v1
+    key_env: RIVER_API_KEY
+    api_key: ${RIVER_API_KEY}
+    api_mode: chat_completions
+    reasoning_echo: true
+  - provider: river
+    model: Qwen/Qwen3.8-27B-FP8
+    base_url: https://api.river.ai/v1
+    key_env: RIVER_API_KEY
+    api_key: ${RIVER_API_KEY}
+    api_mode: chat_completions
+    reasoning_echo: true
+  - provider: river
+    model: nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4
+    base_url: https://api.river.ai/v1
+    key_env: RIVER_API_KEY
+    api_key: ${RIVER_API_KEY}
+    api_mode: chat_completions
+    reasoning_echo: true
+  - provider: river
+    model: deepseek-ai/DeepSeek-V4.1-Flash-1017
+    base_url: https://api.river.ai/v1
+    key_env: RIVER_API_KEY
+    api_key: ${RIVER_API_KEY}
+    api_mode: chat_completions
+    reasoning_echo: true
+  - provider: vertex
+    model: google/gemini-3.1-pro-preview
+    base_url: https://aiplatform.googleapis.com/v1beta1/projects/genai-512407/locations/global/endpoints/openapi
+    api_mode: chat_completions
+  - provider: vertex
+    model: google/gemini-3-flash-preview
+    base_url: https://aiplatform.googleapis.com/v1beta1/projects/genai-512407/locations/global/endpoints/openapi
+    api_mode: chat_completions
+  - provider: vertex
+    model: google/gemini-3.8-flash
+    base_url: https://aiplatform.googleapis.com/v1beta1/projects/genai-512407/locations/global/endpoints/openapi
+    api_mode: chat_completions
+  - provider: vertex
+    model: openai/gpt-oss-120b-maas
+    base_url: https://aiplatform.googleapis.com/v1beta1/projects/genai-512407/locations/global/endpoints/openapi
+    api_mode: chat_completions
+  - provider: vertex
+    model: google/gemini-4-argon
+    base_url: https://aiplatform.googleapis.com/v1beta1/projects/genai-512407/locations/global/endpoints/openapi
+    api_mode: chat_completions

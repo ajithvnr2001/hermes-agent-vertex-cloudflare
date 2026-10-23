@@ -39,6 +39,13 @@ ln -sfn "$HA_DIR/hermes_cli/web_dist" "$WS_DIR/hermes_cli/web_dist"
 for item in ui-tui node_modules web package.json package-lock.json .git; do
   [ -e "$HA_DIR/$item" ] && [ ! -e "$WS_DIR/$item" ] && ln -sfn "$HA_DIR/$item" "$WS_DIR/$item" || true
 done
+for env_ws in /data/hermes/.hermes/installs/*/environments/*/workspace; do
+  if [ -d "$env_ws/agent" ] && [ -d "$HA_DIR/agent" ]; then
+    cp -f "$HA_DIR/agent/retry_utils.py" "$env_ws/agent/retry_utils.py" 2>/dev/null || true
+    cp -f "$HA_DIR/agent/turn_recovery_autorecover.py" "$env_ws/agent/turn_recovery_autorecover.py" 2>/dev/null || true
+    cp -f "$HA_DIR/agent/turn_api_error.py" "$env_ws/agent/turn_api_error.py" 2>/dev/null || true
+  fi
+done
 chmod +x /data/hermes/.hermes/hermes-agent/venv/bin/hermes /data/hermes/start-tunnel.sh /data/bin/cloudflared 2>/dev/null || true
 mkdir -p "$WS_DIR/.hermes/bin" /data/hermes/.hermes/bin
 cat << 'EOF' > "$WS_DIR/.hermes/bin/hermes"
