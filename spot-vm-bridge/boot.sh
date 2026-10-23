@@ -40,18 +40,27 @@ for item in ui-tui node_modules web package.json package-lock.json .git; do
   [ -e "$HA_DIR/$item" ] && [ ! -e "$WS_DIR/$item" ] && ln -sfn "$HA_DIR/$item" "$WS_DIR/$item" || true
 done
 chmod +x /data/hermes/.hermes/hermes-agent/venv/bin/hermes /data/hermes/start-tunnel.sh /data/bin/cloudflared 2>/dev/null || true
+mkdir -p "$WS_DIR/.hermes/bin" /data/hermes/.hermes/bin
+cat << 'EOF' > "$WS_DIR/.hermes/bin/hermes"
+#!/bin/sh
+exec /data/hermes/.hermes/hermes-agent/venv/bin/hermes "$@"
+EOF
+chmod +x "$WS_DIR/.hermes/bin/hermes"
+cp -f "$WS_DIR/.hermes/bin/hermes" /data/hermes/.hermes/bin/hermes
+chmod +x /data/hermes/.hermes/bin/hermes
 ln -sfn /data/bin/cloudflared /usr/local/bin/cloudflared 2>/dev/null || true
 ln -sfn /data/hermes/.hermes/hermes-agent/venv/bin/hermes /data/bin/hermes
 ln -sfn /data/hermes/.hermes/hermes-agent/venv/bin/hermes /usr/local/bin/hermes
 ln -sfn /data/hermes/.hermes/hermes-agent/venv/bin/hermes /root/.local/bin/hermes
 
 # 3. Install and start systemd services
+cp -f /data/hermes/hermes-gateway.service /etc/systemd/system/hermes-gateway.service
 cp -f /data/hermes/hermes-dashboard.service /etc/systemd/system/hermes-dashboard.service
 cp -f /data/hermes/hermes-bridge.service /etc/systemd/system/hermes-bridge.service
 systemctl stop hermes-sync.service 2>/dev/null || true
 systemctl disable hermes-sync.service 2>/dev/null || true
 systemctl daemon-reload
-systemctl enable hermes-dashboard.service hermes-bridge.service
-systemctl restart hermes-dashboard.service hermes-bridge.service
+systemctl enable hermes-gateway.service hermes-dashboard.service hermes-bridge.service
+systemctl restart hermes-gateway.service hermes-dashboard.service hermes-bridge.service
 
 echo "[hermes-boot] Native Hermes Agent Web Dashboard active on 127.0.0.1:9119 and routed to hermes.rpcserve.website."
