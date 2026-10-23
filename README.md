@@ -209,9 +209,84 @@ sequenceDiagram
 
 ---
 
-## 🛠️ 6. End-to-End Deployment Guide (Spot VM / General VM + Cloudflare + Vertex AI)
+## 🛠️ 6. End-to-End Beginner Setup Guide (New Linux VM + Hermes Agent + Vertex AI + River AI + 10-Provider Fallback)
 
-> For a command-by-command copy-paste runbook with troubleshooting tips, see [**`docs/DEPLOYMENT_GUIDE.md`**](docs/DEPLOYMENT_GUIDE.md).
+> 📖 **For the complete, minute-level beginner runbook (from `apt-get update` on a brand-new VM to verifying all 15 Gemini models, River AI's 5 models, Telegram gateway, and proactive context compaction), see [`docs/DEPLOYMENT_GUIDE.md`](docs/DEPLOYMENT_GUIDE.md).**
+
+### Quick 5-Minute New-VM Bootstrap (`scripts/setup-spot-vm.sh`)
+
+On any fresh Ubuntu/Debian VM with a `/data` disk:
+
+```bash
+sudo -i
+mkdir -p /data/hermes/.hermes
+ln -sfn /data/hermes/.hermes /root/.hermes
+
+# 1. Clone this repository
+git clone https://github.com/ajithvnr2001/hermes-agent-vertex-cloudflare.git /data/hermes/hermes-agent-vertex-cloudflare-repo
+cd /data/hermes/hermes-agent-vertex-cloudflare-repo
+
+# 2. Run the automated end-to-end installer (installs Hermes Agent, River AI + Vertex AI config,
+#    10-provider fallback chain, 429 auto-recovery patches, Playwright/Scrapling, and systemd services)
+bash scripts/setup-spot-vm.sh
+```
+
+---
+
+### How All Gemini Models & River AI Models Are Configured
+
+#### A. Google Cloud Vertex AI — All 15 Gemini Models (3 Access Paths)
+1. **Path 1 (`provider: vertex` — OpenAI-Compatible Endpoint via Google OAuth / ADC):**
+   - **Endpoint:** `https://aiplatform.googleapis.com/v1beta1/projects/<PROJECT_ID>/locations/global/endpoints/openapi`
+   - **Auth:** `gcloud auth application-default login` (mints `ya29...` OAuth2 token automatically).
+   - **Models (`google/*`):** `google/gemini-4-argon` (default), `google/gemini-3.8-flash`, `google/gemini-3.7-flash`, `google/gemini-3.6-flash`, `google/gemini-3.5-flash`, `google/gemini-3.5-flash-lite`, `google/gemini-3.1-pro-preview`, `google/gemini-3.1-pro-preview-customtools`, `google/gemini-3.1-flash-lite`, `google/gemini-3-flash-preview`, `google/gemini-2.5-pro`, `google/gemini-2.5-flash`, `google/gemini-2.5-flash-lite`.
+2. **Path 2 (`provider: gemini` — Native Gemini Adapter via Vertex Express API Key):**
+   - **Endpoint (`GEMINI_BASE_URL`):** `https://aiplatform.googleapis.com/v1beta1/projects/<PROJECT_ID>/locations/global`
+   - **Auth:** `GOOGLE_API_KEY` / `GEMINI_API_KEY` in `/data/hermes/.hermes/.env`.
+3. **Path 3 (Direct `:generateContent` REST for Speech / TTS):**
+   - **Models:** `gemini-3.8-flash-lite-tts` and `gemini-3.8-flash-tts` via `publishers/google/models/<MODEL>:generateContent`.
+
+#### B. River AI (`https://api.river.ai/v1`) — All 5 Models + Dynamic Discovery
+Add `RIVER_API_KEY` and `RIVER_BASE_URL=https://api.river.ai/v1` to `/data/hermes/.hermes/.env`. You can query all available models anytime with:
+
+```python
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://api.river.ai/v1",
+    api_key=os.environ["RIVER_API_KEY"],
+)
+
+# List all available River AI models
+for m in client.models.list().data:
+    print(m.id)
+
+# Test chat completion
+result = client.chat.completions.create(
+    model="deepseek-ai/DeepSeek-V4.1-Flash",
+    messages=[{"role": "user", "content": "Hello"}],
+)
+print(result.choices[0].message.content)
+```
+
+All 5 models from `https://api.river.ai/v1/models` are pre-configured in [`spot-vm-bridge/config.template.yaml`](spot-vm-bridge/config.template.yaml) under `providers.river` and `fallback_providers`:
+1. `deepseek-ai/DeepSeek-V4.1-Flash`
+2. `zai-org/GLM-5.3-Flash`
+3. `Qwen/Qwen3.8-27B-FP8`
+4. `nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4`
+5. `deepseek-ai/DeepSeek-V4.1-Flash-1017`
+
+#### C. Proactive Context Compaction, Auxiliary Offloading & Vertex 429 Auto-Recovery
+To prevent long agentic sessions on 1M-context Gemini models from hitting Vertex AI per-minute token rate limits (`HTTP 429 RESOURCE_EXHAUSTED`):
+- **Proactive Tool-Output Pruning (`proactive_prune_tokens: 36000`):** Automatically trims bulky historical tool outputs once a session reaches 36k tokens.
+- **Early Context Compaction (`threshold: 0.1`, `threshold_tokens: 90000`, `idle_compact_after_seconds: 120`):** Compacts sessions at 90k tokens (instead of waiting for 50% of 1M = 500k tokens).
+- **Auxiliary Offloading (`auxiliary.*` -> River AI `deepseek-ai/DeepSeek-V4.1-Flash`):** Routes `background_review`, `compression`, `session_search`, `flush_memories`, `mcp`, and `approval` to River AI so background memory/skill reviews consume **zero** Vertex AI quota.
+- **Adaptive 429 Backoff & Recovery Patches (`spot-vm-bridge/patches/agent/`):** Spaces Vertex 429 retries across the 60s TPM window (`8s -> 16s -> 32s -> 45s`) and enables the multi-cycle auto-recovery ladder (`15s -> 30s -> 60s`).
+
+---
+
+### Detailed Step-by-Step Manual Setup
 
 ### Prerequisites
 - A **Linux Spot VM or General VM** (Ubuntu/Debian recommended) with a **persistent disk mounted at `/data`**
